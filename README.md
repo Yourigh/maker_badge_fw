@@ -1,2 +1,3 @@
-# maker_badge_fw
-MakerBadge firmware made in Platformio. 
+# Maker Badge FW
+Firmware for a makerbadge made by @dronecz. 
+
