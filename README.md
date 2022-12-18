@@ -1,3 +1,6 @@
 # Maker Badge FW
-Firmware for a makerbadge made by @dronecz. 
+Arduino firmware for a makerbadge made by [@dronecz]https://github.com/dronecz/maker_badge. 
 
+## Where to by HW? 
+
+[Makermarket](http://makermarket.cz/)
