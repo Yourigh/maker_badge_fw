@@ -1,3 +1,6 @@
+//Inspired by https://github.com/SensorsIot/ESP32-OTA
+
+#define ESP32_RTOS  // Uncomment this line if you want to use the code with freertos only on the ESP32 // Has to be done before including "OTA.h"
 #ifdef ESP32
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -18,7 +21,7 @@ void ota_handle( void * parameter ) {
 }
 #endif
 
-void setupOTA(const char* nameprefix, const char* ssid, const char* password) {
+uint8_t setupOTA(const char* nameprefix, const char* ssid, const char* password) {
   // Configure the hostname
   uint16_t maxlen = strlen(nameprefix) + 7;
   char *fullhostname = new char[maxlen];
@@ -33,10 +36,12 @@ void setupOTA(const char* nameprefix, const char* ssid, const char* password) {
   WiFi.begin(ssid, password);
 
   // Wait for connection
+  uint8_t wifiTries = 10;
   while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
+    Serial.println("Connection Failed! trying again.");
     delay(5000);
-    ESP.restart();
+    if (wifiTries-- == 0) return 1;
+    //ESP.restart();
   }
 
   // Port defaults to 3232
@@ -93,4 +98,5 @@ void setupOTA(const char* nameprefix, const char* ssid, const char* password) {
     1,                /* Priority of the task. */
     NULL);            /* Task handle. */
 #endif
+  return 0;
 }
