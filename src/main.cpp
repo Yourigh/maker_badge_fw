@@ -3,24 +3,33 @@
 #include "FastLED.h"
 #include "MakerBadgePins.h"
 #include "GxEPD2_BW.h"
+#include <HTTPClient.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
 
 CRGB leds[4];
 // Instantiate the GxEPD2_BW class for our display type
 GxEPD2_BW<GxEPD2_213_B74, GxEPD2_213_B74::HEIGHT> display(GxEPD2_213_B74(IO_disp_CS, IO_disp_DC, IO_disp_RST, IO_disp_BUSY));  // GDEM0213B74 128x250, SSD1680
-void enter_sleep(void);
+float analogReadBatt();
+void enter_sleep(uint16_t TimedWakeUpSec);
 uint8_t readTouchPins(void);
+uint8_t MakerBadgeSetupWiFi(void);
 void MakerBadgeSetupOTA(void);
 void DisplayBadge(void);
 void CallbackTouch3(void){}
+void FWloadMode(void);
+String httpGETRequest(const char* serverName);
 
 bool ScreenUpdate = true;
 uint8_t TouchPins = 0x00;
+uint8_t TouchPinsLast = 0x00;
+uint16_t BattBar = 0;
 
 void setup() {
   //ADC
-  analogSetPinAttenuation(AIN_batt,ADC_11db);
+  //analogSetPinAttenuation(AIN_batt,ADC_11db);
+  analogReadResolution(12);
+  analogSetAttenuation(ADC_11db);
   //Display
   display.init(0); //enter 115200 to see debug in console
   display.setRotation(3);
@@ -30,23 +39,32 @@ void setup() {
   digitalWrite(IO_led_enable_n,LOW);
   FastLED.addLeds<WS2812B, IO_led, GRB>(leds, 4);
   //touch
-  touchAttachInterrupt(IO_touch3,CallbackTouch3,TOUCH_TRESHOLD);
+  touchAttachInterrupt(IO_touch3,CallbackTouch3,TOUCH_TRESHOLD); //Middle touch input is wake up interrupt.
   //Sleep
   esp_sleep_enable_touchpad_wakeup();
 
-  if (readTouchPins()==0b10001)
-    DisplayBadge();
+  if (readTouchPins()==0b10001) //if 1 & 5 is touched on boot - go to badge and sleep
+    DisplayBadge(); //sleep afterwards
+
+  if (readTouchPins()==0b01110) //go to infinite loop if 2 & 4 touched on boot - intended for FW load
+    FWloadMode(); //forever blocking
+
+
+  //continue on home mode
+  leds[0] = CRGB(0,0,1);
+  FastLED.show();
+
+  if(MakerBadgeSetupWiFi()){
+    delay(500); //fail, blink red
+    enter_sleep(20);
+  }
 
   leds[0] = CRGB(10,0,0);
   FastLED.show();
 
   Serial.begin(115200);
   Serial.println("Booting");
-
-  leds[0] = CRGB(0,0,50); //Blue, connecting
-  FastLED.show();
-  MakerBadgeSetupOTA();
-
+  
   display.setFont(&FreeMonoBold9pt7b);
   display.setFullWindow();
   display.firstPage();
@@ -58,7 +76,7 @@ void setup() {
     display.print("Juraj Repcik");
 
   } while (display.nextPage());
-  display.setPartialWindow(0, 20, DISP_X, DISP_Y-10);
+  //display.setPartialWindow(0, 20, DISP_X, DISP_Y-10);
 
   Serial.println("All done");
   leds[0] = CRGB(1,1,0);// CRGB::Green;
@@ -68,31 +86,46 @@ void setup() {
 void loop() {
   // Your code here
   TouchPins = readTouchPins();
-  if (TouchPins){
+  if (TouchPins != TouchPinsLast){
+    TouchPinsLast = TouchPins;
     ScreenUpdate = true;
   }
 
-  //Serial.printf("ADC mV: %d\n",analogReadMilliVolts(AIN_batt));
-  analogReadResolution(12);
-  Serial.printf("ADC raw: %d, mV: %d, mycalc V %f:\n",analogRead(AIN_batt),analogReadMilliVolts(AIN_batt),analogRead(AIN_batt)/823.8);  
+  BattBar = ((analogReadBatt()*10-32)*25);
+
+  Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
+
+  //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test - should get API RUNNING
+  Serial.println(httpGETRequest(HAreqURL));
+  //TODO find and parse: "state":"lalalalalalalla1234",
 
   if(ScreenUpdate){
     do {
       display.fillScreen(GxEPD_WHITE);
+      display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
       display.setCursor(50, 70);
       display.printf("touch 0x%x",readTouchPins());
       display.setCursor(60, 90);
-      display.printf("Batt %.2f V",analogRead(AIN_batt)/823.8);
+      display.printf("Batt %.2f V",analogReadBatt());
     } while (display.nextPage());
     ScreenUpdate = false;
-    display.setPartialWindow(DISP_X/2, 70-9, 7*5, 25);
+    Serial.printf("Screen Updated\n");
+    display.setPartialWindow(DISP_X/2, 70-9, 7*5, 28); //on second refresh.
   }
-  delay(600);
+  delay(10);
 }
 
-void enter_sleep(void){
+float analogReadBatt(){
+  return (2.0*(2.50*analogRead(AIN_batt)/4096)); //volts float
+}
+
+void enter_sleep(uint16_t TimedWakeUpSec){
+  if (TimedWakeUpSec != 0){
+    esp_sleep_enable_timer_wakeup(TimedWakeUpSec*1000000);
+  }
   digitalWrite(IO_led_enable_n,HIGH);
   display.powerOff();
+  esp_deep_sleep_start();
 }
 
 /**
@@ -116,17 +149,24 @@ uint8_t readTouchPins() {
   return TouchResultMask;
 }
 
-void MakerBadgeSetupOTA(void){
-  if(setupOTA("MakerBadge", mySSID, myPASSWORD)){
+uint8_t MakerBadgeSetupWiFi(void){
+  if(setupWiFi("MakerBadge", mySSID, myPASSWORD)){
     Serial.println("Connection failed");
     leds[0] = CRGB(255,0,0);
     FastLED.show();
-    delay(2000);
+    return 1;
   } else {
+    return 0;
+  }
+}
+
+void MakerBadgeSetupOTA(void){
+  if(0==MakerBadgeSetupWiFi()){
+    setupOTA();
     leds[0] = CRGB(0,10,0);// CRGB::Green;
     FastLED.show();
   }
-  
+
   Serial.println("OTA Initialized");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
@@ -141,24 +181,74 @@ void DisplayBadge(void){
   display.setFullWindow();
   display.firstPage();
   display.setTextWrap(false);
+
+  BattBar = ((analogReadBatt()*10-32)*25);
+
   do {
     display.fillScreen(GxEPD_WHITE);
+    /*
     //RULLER
     for(int rul=1;rul<25;rul++)
       display.drawLine(rul*10,0,rul*10,2,GxEPD_BLACK);
     for(int rul=1;rul<12;rul++)
       display.drawLine(250,rul*10,250-2,rul*10,GxEPD_BLACK);
     //RULLER END
+    */
     display.setCursor(0, 30);
     display.print("Juraj Repcik");
+    //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(70, 70);
     display.print("_maker");
     display.setCursor(45, 100);
     display.print("keep making...");
+    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
   digitalWrite(IO_led_enable_n,HIGH);
   display.powerOff();
-  //esp_deep_sleep_start();
-  while(1){}
+  enter_sleep(0); //TODO change to big value or zero
+}
+
+void FWloadMode(void){
+  leds[0] = CRGB(0,0,50); //Blue, connecting
+  FastLED.show();
+  MakerBadgeSetupOTA();
+  while(1){
+    delay(600);
+    leds[0] = CRGB(20,20,0);
+    FastLED.show();
+    delay(600);
+    FastLED.clear(true);
+  }
+}
+
+String httpGETRequest(const char* serverName) {
+  WiFiClient client;
+  HTTPClient http;
+    
+  // Your Domain name with URL path or IP address with path
+  http.begin(client, serverName);
+  
+  // If you need Node-RED/server authentication, insert user and password below
+  //http.setAuthorization("REPLACE_WITH_SERVER_USERNAME", "REPLACE_WITH_SERVER_PASSWORD");
+  http.addHeader("Authorization",HAtoken);
+
+  // Send HTTP POST request
+  int httpResponseCode = http.GET();
+  
+  String payload = "{}"; 
+  
+  if (httpResponseCode>0) {
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+    payload = http.getString();
+  }
+  else {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+  // Free resources
+  http.end();
+
+  return payload;
 }
