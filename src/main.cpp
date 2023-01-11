@@ -38,9 +38,8 @@ void setup() {
   pinMode(IO_led_enable_n,OUTPUT);
   digitalWrite(IO_led_enable_n,LOW);
   FastLED.addLeds<WS2812B, IO_led, GRB>(leds, 4);
-  //touch
+  //touch wakeup
   touchAttachInterrupt(IO_touch3,CallbackTouch3,TOUCH_TRESHOLD); //Middle touch input is wake up interrupt.
-  //Sleep
   esp_sleep_enable_touchpad_wakeup();
 
   if (readTouchPins()==0b10001) //if 1 & 5 is touched on boot - go to badge and sleep
@@ -110,7 +109,8 @@ void loop() {
     } while (display.nextPage());
     ScreenUpdate = false;
     Serial.printf("Screen Updated\n");
-    display.setPartialWindow(DISP_X/2, 70-9, 7*5, 28); //on second refresh.
+    display.setPartialWindow(DISP_X/2, 70-9, 7*5, 28); 
+    //on second+ refresh, bounds are where text is, only text will be updated
   }
   delay(10);
 }
