@@ -19,11 +19,20 @@ void DisplayBadge(void);
 void CallbackTouch3(void){}
 void FWloadMode(void);
 String httpGETRequest(const char* serverName);
+struct DispData{
+  bool valid = false;
+  String RawState = "Empty";
+  float TamperatureOutside = 0;
+  uint16_t co2 = 0;
+};
+struct DispData httpParseReply(String payload);
+struct DispData ActualDispData;
 
 bool ScreenUpdate = true;
 uint8_t TouchPins = 0x00;
 uint8_t TouchPinsLast = 0x00;
 uint16_t BattBar = 0;
+String HA_state;
 
 void setup() {
   //ADC
@@ -67,18 +76,9 @@ void setup() {
   display.setFont(&FreeMonoBold9pt7b);
   display.setFullWindow();
   display.firstPage();
-  do {
-    display.fillScreen(GxEPD_WHITE);
-    //display.drawBitmap(0, 0, bitmap, display.epd2.WIDTH, display.epd2.HEIGHT, GxEPD_BLACK);
-    display.drawCircle(0,0,50,GxEPD_BLACK);
-    display.setCursor(55, 10);
-    display.print("Juraj Repcik");
-
-  } while (display.nextPage());
-  //display.setPartialWindow(0, 20, DISP_X, DISP_Y-10);
 
   Serial.println("All done");
-  leds[0] = CRGB(1,1,0);// CRGB::Green;
+  leds[0] = CRGB(3,3,0);// CRGB::Green;
   FastLED.show();
 }
 
@@ -95,13 +95,15 @@ void loop() {
   Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
 
   //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test - should get API RUNNING
-  Serial.println(httpGETRequest(HAreqURL));
-  //TODO find and parse: "state":"lalalalalalalla1234",
+  ActualDispData = httpParseReply(httpGETRequest(HAreqURL));
+  
 
   if(ScreenUpdate){
     do {
       display.fillScreen(GxEPD_WHITE);
       display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+      display.setCursor(10, 20);
+      display.print(ActualDispData.RawState);
       display.setCursor(50, 70);
       display.printf("touch 0x%x",readTouchPins());
       display.setCursor(60, 90);
@@ -109,10 +111,10 @@ void loop() {
     } while (display.nextPage());
     ScreenUpdate = false;
     Serial.printf("Screen Updated\n");
-    display.setPartialWindow(DISP_X/2, 70-9, 7*5, 28); 
+    //display.setPartialWindow(DISP_X/2, 70-9, 7*5, 28); 
     //on second+ refresh, bounds are where text is, only text will be updated
   }
-  delay(10);
+  delay(500);
 }
 
 float analogReadBatt(){
@@ -251,4 +253,25 @@ String httpGETRequest(const char* serverName) {
   http.end();
 
   return payload;
+}
+
+struct DispData httpParseReply(String payload){
+  //TODO find and parse: "state":"lalalalalalalla1234",
+  Serial.print("HTML GET REPLY:");
+  Serial.println(payload);
+  int StateIndex = payload.indexOf("\"state\":\"");
+  int StateIndexEnd = payload.indexOf("\"",StateIndex);
+  DispData ActualDispData;
+  if ((StateIndex == -1) | (StateIndexEnd == -1)){
+    ActualDispData.valid = false;
+    return ActualDispData;
+  }
+  String StateStr = payload.substring(StateIndex,StateIndexEnd);
+
+  Serial.print("ISOLATED STATE:");
+  Serial.println(StateStr);
+
+  ActualDispData.valid = true;
+  ActualDispData.RawState = StateStr;
+  return ActualDispData;
 }
