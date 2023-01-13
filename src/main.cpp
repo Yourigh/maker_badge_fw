@@ -5,6 +5,7 @@
 #include "GxEPD2_BW.h"
 #include <HTTPClient.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
+#include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
 
 CRGB leds[4];
@@ -19,24 +20,30 @@ void DisplayBadge(void);
 void CallbackTouch3(void){}
 void FWloadMode(void);
 String httpGETRequest(const char* serverName);
+struct DispData httpParseReply(String payload);
+void DisplayMenu(void);
+void DisplayHAPrepareLayout(void);
+void DisplayHomeAssistant(void);
+
 struct DispData{
   bool valid = false;
   String RawState = "Empty";
-  float TamperatureOutside = 0;
-  uint16_t co2 = 0;
+  //float TamperatureOutside = 0;
+  //uint16_t co2 = 0;
 };
-struct DispData httpParseReply(String payload);
-struct DispData ActualDispData;
+enum mbStates{Menu, HomeAssistant, Badge, FWupdate};
 
+struct DispData ActualDispData;
 bool ScreenUpdate = true;
 uint8_t TouchPins = 0x00;
 uint8_t TouchPinsLast = 0x00;
 uint16_t BattBar = 0;
-String HA_state;
+RTC_DATA_ATTR mbStates CurrentMode = Menu; //to store in ULP, kept during deep sleep
 
 void setup() {
+  //Serial
+  Serial.begin(115200);
   //ADC
-  //analogSetPinAttenuation(AIN_batt,ADC_11db);
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
   //Display
@@ -45,76 +52,39 @@ void setup() {
   display.setTextColor(GxEPD_BLACK);
   //LEDs
   pinMode(IO_led_enable_n,OUTPUT);
-  digitalWrite(IO_led_enable_n,LOW);
+  digitalWrite(IO_led_enable_n,HIGH);
   FastLED.addLeds<WS2812B, IO_led, GRB>(leds, 4);
   //touch wakeup
   touchAttachInterrupt(IO_touch3,CallbackTouch3,TOUCH_TRESHOLD); //Middle touch input is wake up interrupt.
   esp_sleep_enable_touchpad_wakeup();
 
-  if (readTouchPins()==0b10001) //if 1 & 5 is touched on boot - go to badge and sleep
-    DisplayBadge(); //sleep afterwards
-
-  if (readTouchPins()==0b01110) //go to infinite loop if 2 & 4 touched on boot - intended for FW load
-    FWloadMode(); //forever blocking
-
-
-  //continue on home mode
-  leds[0] = CRGB(0,0,1);
-  FastLED.show();
-
-  if(MakerBadgeSetupWiFi()){
-    delay(500); //fail, blink red
-    enter_sleep(20);
+  //Serial.printf("CurrentMode is:%d",CurrentMode);
+  switch (esp_sleep_get_wakeup_cause()){
+    case ESP_SLEEP_WAKEUP_TIMER:
+      //restore last used mode.
+      switch (CurrentMode){
+        case HomeAssistant:
+          DisplayHomeAssistant(); //sleeps and periodically updates
+          break;
+        case Badge:
+          DisplayBadge(); //sleep forever
+          break;
+        case FWupdate:
+          FWloadMode(); //forever blocking
+          break;
+      }
+      break;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD:
+      //falldown
+    default:
+      //normal power-up after reset
+      DisplayMenu(); //menu to select a mode. Blocking.
+      enter_sleep(1); //sleeps for 1s and gets back to switch timer wakeup cause.
   }
-
-  leds[0] = CRGB(10,0,0);
-  FastLED.show();
-
-  Serial.begin(115200);
-  Serial.println("Booting");
-  
-  display.setFont(&FreeMonoBold9pt7b);
-  display.setFullWindow();
-  display.firstPage();
-
-  Serial.println("All done");
-  leds[0] = CRGB(3,3,0);// CRGB::Green;
-  FastLED.show();
-}
+} //end setup
 
 void loop() {
-  // Your code here
-  TouchPins = readTouchPins();
-  if (TouchPins != TouchPinsLast){
-    TouchPinsLast = TouchPins;
-    ScreenUpdate = true;
-  }
-
-  BattBar = ((analogReadBatt()*10-32)*25);
-
-  Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
-
-  //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test - should get API RUNNING
-  ActualDispData = httpParseReply(httpGETRequest(HAreqURL));
-  
-
-  if(ScreenUpdate){
-    do {
-      display.fillScreen(GxEPD_WHITE);
-      display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
-      display.setCursor(10, 20);
-      display.print(ActualDispData.RawState);
-      display.setCursor(50, 70);
-      display.printf("touch 0x%x",readTouchPins());
-      display.setCursor(60, 90);
-      display.printf("Batt %.2f V",analogReadBatt());
-    } while (display.nextPage());
-    ScreenUpdate = false;
-    Serial.printf("Screen Updated\n");
-    //display.setPartialWindow(DISP_X/2, 70-9, 7*5, 28); 
-    //on second+ refresh, bounds are where text is, only text will be updated
-  }
-  delay(500);
+  //empty
 }
 
 float analogReadBatt(){
@@ -123,17 +93,30 @@ float analogReadBatt(){
 
 void enter_sleep(uint16_t TimedWakeUpSec){
   if (TimedWakeUpSec != 0){
-    esp_sleep_enable_timer_wakeup(TimedWakeUpSec*1000000);
+    if (ESP_OK != esp_sleep_enable_timer_wakeup(TimedWakeUpSec*1000000)){
+      //out of range
+      digitalWrite(IO_led_enable_n,LOW);
+      leds[0]=CRGB(255,0,0);
+      FastLED.show();
+      delay(500);
+    }
   }
   digitalWrite(IO_led_enable_n,HIGH);
-  display.powerOff();
+  //display.powerOff();
   esp_deep_sleep_start();
+  //MakerBadge B
+  //A: 569uA - no wakeup enabled, deep sleep, with display
+  //B: 119uA - no wakeup enabled, deep sleep, without display (disconnected)
+  //C: 579uA - as A+touch wakup
+  //D: 577uA - as A but enabled touch and timed wakup
+  //measured on pin header - 3V3 
+  //additional 200uA (batt sense) + 60uA (LDO) estimated
 }
 
 /**
  * @brief Reads touch pins
  * 
- * @return uint8_t 0bxxxabcd where abcd are touch inputs.
+ * @return uint8_t 0bxx54321 where 54321 are touch inputs.
  */
 uint8_t readTouchPins() {
   uint16_t touchread;
@@ -147,15 +130,17 @@ uint8_t readTouchPins() {
     }
     //Serial.printf("CT#%0d: %d//", i, touchread);
   }
-  //Serial.printf("\n");
+  //Serial.printf("out:%x\n",TouchResultMask);
   return TouchResultMask;
 }
 
 uint8_t MakerBadgeSetupWiFi(void){
   if(setupWiFi("MakerBadge", mySSID, myPASSWORD)){
+    digitalWrite(IO_led_enable_n,LOW);
     Serial.println("Connection failed");
-    leds[0] = CRGB(255,0,0);
+    leds[0] = CRGB(100,0,0);
     FastLED.show();
+    delay(500);
     return 1;
   } else {
     return 0;
@@ -177,7 +162,8 @@ void MakerBadgeSetupOTA(void){
 }
 
 void DisplayBadge(void){
-  leds[0] = CRGB(00,100,0);
+  digitalWrite(IO_led_enable_n,LOW);
+  leds[0] = CRGB(00,10,0);
   FastLED.show();
   display.setFont(&FreeMonoBold18pt7b);
   display.setFullWindow();
@@ -188,39 +174,47 @@ void DisplayBadge(void){
 
   do {
     display.fillScreen(GxEPD_WHITE);
-    /*
-    //RULLER
-    for(int rul=1;rul<25;rul++)
-      display.drawLine(rul*10,0,rul*10,2,GxEPD_BLACK);
-    for(int rul=1;rul<12;rul++)
-      display.drawLine(250,rul*10,250-2,rul*10,GxEPD_BLACK);
-    //RULLER END
-    */
     display.setCursor(0, 30);
     display.print("Juraj Repcik");
     //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(70, 70);
-    display.print("_maker");
+    display.print(" _maker");
     display.setCursor(45, 100);
-    display.print("keep making...");
+    display.print(" keep making...");
     display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
   digitalWrite(IO_led_enable_n,HIGH);
   display.powerOff();
-  enter_sleep(0); //TODO change to big value or zero
+  enter_sleep(0);
 }
 
 void FWloadMode(void){
+  digitalWrite(IO_led_enable_n,LOW);
   leds[0] = CRGB(0,0,50); //Blue, connecting
   FastLED.show();
   MakerBadgeSetupOTA();
+  display.setFont(&FreeMonoBold18pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  display.setTextWrap(false);
+  BattBar = ((analogReadBatt()*10-32)*25);
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 30);
+    display.print(" FW update");
+    display.setFont(&FreeMonoBold9pt7b);
+    display.setCursor(50, 90);
+    display.printf("Batt %.2f V",analogReadBatt());
+    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+  } while (display.nextPage());
+  uint8_t ledrotate = 0;
   while(1){
-    delay(600);
-    leds[0] = CRGB(20,20,0);
+    leds[ledrotate++] = CRGB(20,20,0);
     FastLED.show();
     delay(600);
     FastLED.clear(true);
+    if (ledrotate == 4) ledrotate = 0;
   }
 }
 
@@ -241,8 +235,8 @@ String httpGETRequest(const char* serverName) {
   String payload = "{}"; 
   
   if (httpResponseCode>0) {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
+    //Serial.print("HTTP Response code: ");
+    //Serial.println(httpResponseCode);
     payload = http.getString();
   }
   else {
@@ -257,21 +251,111 @@ String httpGETRequest(const char* serverName) {
 
 struct DispData httpParseReply(String payload){
   //TODO find and parse: "state":"lalalalalalalla1234",
-  Serial.print("HTML GET REPLY:");
-  Serial.println(payload);
+  //Serial.print("HTML GET REPLY:");
+  //Serial.println(payload);
   int StateIndex = payload.indexOf("\"state\":\"");
-  int StateIndexEnd = payload.indexOf("\"",StateIndex);
-  DispData ActualDispData;
-  if ((StateIndex == -1) | (StateIndexEnd == -1)){
+  if (StateIndex == -1){
     ActualDispData.valid = false;
+    ActualDispData.RawState = "not valid";
     return ActualDispData;
   }
-  String StateStr = payload.substring(StateIndex,StateIndexEnd);
-
-  Serial.print("ISOLATED STATE:");
-  Serial.println(StateStr);
-
+  int StateIndexEnd = payload.indexOf("\"",StateIndex+10); //+10 for skipping "state":" string
+  DispData ActualDispData;
+  //Serial.printf("indexes %d - %d\n",StateIndex,StateIndexEnd);
+  String StateStr = payload.substring(StateIndex+9,StateIndexEnd);
+  //Serial.print("ISOLATED STATE:");
+  //Serial.println(StateStr);
   ActualDispData.valid = true;
   ActualDispData.RawState = StateStr;
   return ActualDispData;
+}
+
+void DisplayMenu(void){
+  digitalWrite(IO_led_enable_n,LOW);
+  leds[0] = CRGB(5,10,0);
+  leds[1] = CRGB(5,10,0);
+  FastLED.show();
+  display.setFont(&FreeMonoBold9pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  display.setTextWrap(true);
+  BattBar = ((analogReadBatt()*10-32)*25);
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 12);
+    display.print("   Maker Badge Menu");
+    display.setCursor(0, 39);
+    display.printf("   1. Home Assistant\n\n   2. Badge\n\n   3. FW update");
+    display.fillRect(0,20,250,2,GxEPD_BLACK);
+    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+  } while (display.nextPage());
+  uint8_t flipLED = 1;
+  uint32_t lastMillis = 0;
+  while(1){
+    delay(150);
+    switch(readTouchPins()){
+      case 0b00001: //1
+        CurrentMode = HomeAssistant;
+        return;
+      case 0b00010: //2
+        CurrentMode = Badge;
+        return;
+      case 0b00100: //3
+        CurrentMode = FWupdate;
+        return;
+      default:
+        CurrentMode = Menu;
+        break;
+    }
+    if ((lastMillis+600) < millis()){
+      leds[  flipLED & 0x01   ] = CRGB(5,10,0);
+      leds[!(flipLED++ & 0x01)] = CRGB(0,0,0);
+      FastLED.show();
+      lastMillis = millis();
+    }
+  }
+}
+
+//prepare non-changing graphics on the screen. DisplayHomeAssistant will use only partial update.
+void DisplayHAPrepareLayout(void){
+  //TODO
+  display.setFont(&FreeMonoBold9pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 12);
+    display.print("   Home Assistant");
+    display.fillRect(0,18,250,1,GxEPD_BLACK);
+  } while (display.nextPage());
+}
+
+void DisplayHomeAssistant(void){
+  //LEDs disabled
+  //digitalWrite(IO_led_enable_n,LOW);
+
+  if(MakerBadgeSetupWiFi()){
+    enter_sleep(HA_UPDATE_PERIOD_SEC);
+  }
+  //NO OTA is set up, FWupdate mode is for OTA
+  display.setFont(&FreeMonoBold9pt7b);
+  
+  BattBar = ((analogReadBatt()*10-32)*25);
+  //Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
+  //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test - should get API RUNNING
+  ActualDispData = httpParseReply(httpGETRequest(HAreqURL));
+  display.setFullWindow();
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 12);
+    display.print("    Home Assistant");
+    display.setFont(&FreeMonoBold12pt7b);
+    display.fillRect(0,18,250,1,GxEPD_BLACK);
+    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+    display.setCursor(0, 39);
+    display.print(ActualDispData.RawState);
+  } while (display.nextPage());
+
+  enter_sleep(HA_UPDATE_PERIOD_SEC);
 }

@@ -15,3 +15,6 @@
 #define DISP_X 250
 #define DISP_Y 128
 #define TOUCH_TRESHOLD 20000 //ca. 15000 when empty, 30k for touch
+
+//settings
+#define HA_UPDATE_PERIOD_SEC 600

@@ -36,7 +36,7 @@ uint8_t setupWiFi(const char* nameprefix, const char* ssid, const char* password
   WiFi.begin(ssid, password);
 
   // Wait for connection
-  uint8_t wifiTries = 50;
+  uint8_t wifiTries = 40; //2s
   
   Serial.printf("waitForConnectResult: %d\n",WiFi.waitForConnectResult());
   while (wifiTries-- != 0) {
