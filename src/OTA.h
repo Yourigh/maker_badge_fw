@@ -21,7 +21,7 @@ void ota_handle( void * parameter ) {
 }
 #endif
 
-uint8_t setupOTA(const char* nameprefix, const char* ssid, const char* password) {
+uint8_t setupWiFi(const char* nameprefix, const char* ssid, const char* password){
   // Configure the hostname
   uint16_t maxlen = strlen(nameprefix) + 7;
   char *fullhostname = new char[maxlen];
@@ -36,13 +36,19 @@ uint8_t setupOTA(const char* nameprefix, const char* ssid, const char* password)
   WiFi.begin(ssid, password);
 
   // Wait for connection
-  uint8_t wifiTries = 10;
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! trying again.");
-    delay(5000);
-    if (wifiTries-- == 0) return 1;
+  uint8_t wifiTries = 40; //2s
+  
+  Serial.printf("waitForConnectResult: %d\n",WiFi.waitForConnectResult());
+  while (wifiTries-- != 0) {
+    if (WiFi.waitForConnectResult() == WL_CONNECTED) return 0;
+    Serial.printf("Connection Failed! trying again. Status: %d\n",WiFi.status());
+    delay(50);
     //ESP.restart();
-  }
+  }  
+  return 1;
+}
+
+uint8_t setupOTA(void) {
 
   // Port defaults to 3232
   // ArduinoOTA.setPort(3232); // Use 8266 port if you are working in Sloeber IDE, it is fixed there and not adjustable
