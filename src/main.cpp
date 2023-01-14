@@ -22,7 +22,6 @@ void FWloadMode(void);
 String httpGETRequest(const char* serverName);
 struct DispData httpParseReply(String payload);
 void DisplayMenu(void);
-void DisplayHAPrepareLayout(void);
 void DisplayHomeAssistant(void);
 
 struct DispData{
@@ -87,6 +86,139 @@ void loop() {
   //empty
 }
 
+void DisplayMenu(void){
+  digitalWrite(IO_led_enable_n,LOW);
+  leds[0] = CRGB(5,10,0);
+  leds[1] = CRGB(5,10,0);
+  FastLED.show();
+  display.setFont(&FreeMonoBold9pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  display.setTextWrap(true);
+  BattBar = ((analogReadBatt()*10-32)*25);
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 12);
+    display.print("   Maker Badge Menu");
+    display.setCursor(0, 39);
+    display.printf("   1. Home Assistant\n\n   2. Badge\n\n   3. FW update");
+    display.fillRect(0,20,250,2,GxEPD_BLACK);
+    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+  } while (display.nextPage());
+  uint8_t flipLED = 1;
+  uint32_t lastMillis = 0;
+  while(1){
+    delay(150);
+    switch(readTouchPins()){
+      case 0b00001: //1
+        CurrentMode = HomeAssistant;
+        return;
+      case 0b00010: //2
+        CurrentMode = Badge;
+        return;
+      case 0b00100: //3
+        CurrentMode = FWupdate;
+        return;
+      default:
+        CurrentMode = Menu;
+        break;
+    }
+    if ((lastMillis+600) < millis()){
+      leds[  flipLED & 0x01   ] = CRGB(5,10,0);
+      leds[!(flipLED++ & 0x01)] = CRGB(0,0,0);
+      FastLED.show();
+      lastMillis = millis();
+    }
+  }
+}
+
+void DisplayHomeAssistant(void){
+  //LEDs disabled
+  //digitalWrite(IO_led_enable_n,LOW);
+
+  if(MakerBadgeSetupWiFi()){
+    enter_sleep(HA_UPDATE_PERIOD_SEC);
+  }
+  //NO OTA is set up, FWupdate mode is for OTA
+  display.setFont(&FreeMonoBold9pt7b);
+  
+  BattBar = ((analogReadBatt()*10-32)*25);
+  //Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
+  //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test - should get API RUNNING
+  ActualDispData = httpParseReply(httpGETRequest(HAreqURL));
+  display.setFullWindow();
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 12);
+    display.print("    Home Assistant");
+    display.setFont(&FreeMonoBold12pt7b);
+    display.fillRect(0,18,250,1,GxEPD_BLACK);
+    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+    display.setCursor(0, 39);
+    display.print(ActualDispData.RawState);
+  } while (display.nextPage());
+
+  enter_sleep(HA_UPDATE_PERIOD_SEC);
+}
+
+void DisplayBadge(void){
+  digitalWrite(IO_led_enable_n,LOW);
+  leds[0] = CRGB(00,10,0);
+  FastLED.show();
+  display.setFont(&FreeMonoBold18pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  display.setTextWrap(false);
+
+  BattBar = ((analogReadBatt()*10-32)*25);
+
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 30);
+    display.print("Juraj Repcik");
+    //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
+    display.setFont(&FreeMonoBold9pt7b);
+    display.setCursor(70, 70);
+    display.print(" _maker");
+    display.setCursor(45, 100);
+    display.print(" keep making...");
+    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+  } while (display.nextPage());
+  digitalWrite(IO_led_enable_n,HIGH);
+  display.powerOff();
+  enter_sleep(0);
+}
+
+void FWloadMode(void){
+  digitalWrite(IO_led_enable_n,LOW);
+  leds[0] = CRGB(0,0,50); //Blue, connecting
+  FastLED.show();
+  MakerBadgeSetupOTA();
+  display.setFont(&FreeMonoBold18pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  display.setTextWrap(false);
+  BattBar = ((analogReadBatt()*10-32)*25);
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 30);
+    display.print(" FW update");
+    display.setFont(&FreeMonoBold9pt7b);
+    display.setCursor(50, 90);
+    display.printf("Batt %.2f V",analogReadBatt());
+    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+  } while (display.nextPage());
+  uint8_t ledrotate = 0;
+  while(1){
+    leds[ledrotate++] = CRGB(20,20,0);
+    FastLED.show();
+    delay(600);
+    FastLED.clear(true);
+    if (ledrotate == 4) ledrotate = 0;
+  }
+}
+//---------------------------------
 float analogReadBatt(){
   return (2.0*(2.50*analogRead(AIN_batt)/4096)); //volts float
 }
@@ -161,63 +293,6 @@ void MakerBadgeSetupOTA(void){
   Serial.println(ArduinoOTA.getHostname());
 }
 
-void DisplayBadge(void){
-  digitalWrite(IO_led_enable_n,LOW);
-  leds[0] = CRGB(00,10,0);
-  FastLED.show();
-  display.setFont(&FreeMonoBold18pt7b);
-  display.setFullWindow();
-  display.firstPage();
-  display.setTextWrap(false);
-
-  BattBar = ((analogReadBatt()*10-32)*25);
-
-  do {
-    display.fillScreen(GxEPD_WHITE);
-    display.setCursor(0, 30);
-    display.print("Juraj Repcik");
-    //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
-    display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(70, 70);
-    display.print(" _maker");
-    display.setCursor(45, 100);
-    display.print(" keep making...");
-    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
-  } while (display.nextPage());
-  digitalWrite(IO_led_enable_n,HIGH);
-  display.powerOff();
-  enter_sleep(0);
-}
-
-void FWloadMode(void){
-  digitalWrite(IO_led_enable_n,LOW);
-  leds[0] = CRGB(0,0,50); //Blue, connecting
-  FastLED.show();
-  MakerBadgeSetupOTA();
-  display.setFont(&FreeMonoBold18pt7b);
-  display.setFullWindow();
-  display.firstPage();
-  display.setTextWrap(false);
-  BattBar = ((analogReadBatt()*10-32)*25);
-  do {
-    display.fillScreen(GxEPD_WHITE);
-    display.setCursor(0, 30);
-    display.print(" FW update");
-    display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(50, 90);
-    display.printf("Batt %.2f V",analogReadBatt());
-    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
-  } while (display.nextPage());
-  uint8_t ledrotate = 0;
-  while(1){
-    leds[ledrotate++] = CRGB(20,20,0);
-    FastLED.show();
-    delay(600);
-    FastLED.clear(true);
-    if (ledrotate == 4) ledrotate = 0;
-  }
-}
-
 String httpGETRequest(const char* serverName) {
   WiFiClient client;
   HTTPClient http;
@@ -270,92 +345,3 @@ struct DispData httpParseReply(String payload){
   return ActualDispData;
 }
 
-void DisplayMenu(void){
-  digitalWrite(IO_led_enable_n,LOW);
-  leds[0] = CRGB(5,10,0);
-  leds[1] = CRGB(5,10,0);
-  FastLED.show();
-  display.setFont(&FreeMonoBold9pt7b);
-  display.setFullWindow();
-  display.firstPage();
-  display.setTextWrap(true);
-  BattBar = ((analogReadBatt()*10-32)*25);
-  do {
-    display.fillScreen(GxEPD_WHITE);
-    display.setCursor(0, 12);
-    display.print("   Maker Badge Menu");
-    display.setCursor(0, 39);
-    display.printf("   1. Home Assistant\n\n   2. Badge\n\n   3. FW update");
-    display.fillRect(0,20,250,2,GxEPD_BLACK);
-    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
-  } while (display.nextPage());
-  uint8_t flipLED = 1;
-  uint32_t lastMillis = 0;
-  while(1){
-    delay(150);
-    switch(readTouchPins()){
-      case 0b00001: //1
-        CurrentMode = HomeAssistant;
-        return;
-      case 0b00010: //2
-        CurrentMode = Badge;
-        return;
-      case 0b00100: //3
-        CurrentMode = FWupdate;
-        return;
-      default:
-        CurrentMode = Menu;
-        break;
-    }
-    if ((lastMillis+600) < millis()){
-      leds[  flipLED & 0x01   ] = CRGB(5,10,0);
-      leds[!(flipLED++ & 0x01)] = CRGB(0,0,0);
-      FastLED.show();
-      lastMillis = millis();
-    }
-  }
-}
-
-//prepare non-changing graphics on the screen. DisplayHomeAssistant will use only partial update.
-void DisplayHAPrepareLayout(void){
-  //TODO
-  display.setFont(&FreeMonoBold9pt7b);
-  display.setFullWindow();
-  display.firstPage();
-  do {
-    display.fillScreen(GxEPD_WHITE);
-    display.setCursor(0, 12);
-    display.print("   Home Assistant");
-    display.fillRect(0,18,250,1,GxEPD_BLACK);
-  } while (display.nextPage());
-}
-
-void DisplayHomeAssistant(void){
-  //LEDs disabled
-  //digitalWrite(IO_led_enable_n,LOW);
-
-  if(MakerBadgeSetupWiFi()){
-    enter_sleep(HA_UPDATE_PERIOD_SEC);
-  }
-  //NO OTA is set up, FWupdate mode is for OTA
-  display.setFont(&FreeMonoBold9pt7b);
-  
-  BattBar = ((analogReadBatt()*10-32)*25);
-  //Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
-  //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test - should get API RUNNING
-  ActualDispData = httpParseReply(httpGETRequest(HAreqURL));
-  display.setFullWindow();
-  display.firstPage();
-  do {
-    display.fillScreen(GxEPD_WHITE);
-    display.setCursor(0, 12);
-    display.print("    Home Assistant");
-    display.setFont(&FreeMonoBold12pt7b);
-    display.fillRect(0,18,250,1,GxEPD_BLACK);
-    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
-    display.setCursor(0, 39);
-    display.print(ActualDispData.RawState);
-  } while (display.nextPage());
-
-  enter_sleep(HA_UPDATE_PERIOD_SEC);
-}
