@@ -107,6 +107,7 @@ void DisplayMenu(void){
   } while (display.nextPage());
   uint8_t flipLED = 1;
   uint32_t lastMillis = 0;
+  uint16_t timeout = 1000; //*0.6s = 600s = 10min
   while(1){
     delay(150);
     switch(readTouchPins()){
@@ -128,6 +129,8 @@ void DisplayMenu(void){
       leds[!(flipLED++ & 0x01)] = CRGB(0,0,0);
       FastLED.show();
       lastMillis = millis();
+      if (0 == timeout--)
+        enter_sleep(0);
     }
   }
 }
