@@ -13,8 +13,9 @@
 #define IO_disp_RST 39
 #define IO_disp_BUSY 42
 #define DISP_X 250
-#define DISP_Y 128
+#define DISP_Y 122
 #define TOUCH_TRESHOLD 20000 //ca. 15000 when empty, 30k for touch
 
 //settings
 #define HA_UPDATE_PERIOD_SEC 600
+#define SHOW_LAST_UPDATE 1

@@ -10,7 +10,7 @@
 
 CRGB leds[4];
 // Instantiate the GxEPD2_BW class for our display type
-GxEPD2_BW<GxEPD2_213_B74, GxEPD2_213_B74::HEIGHT> display(GxEPD2_213_B74(IO_disp_CS, IO_disp_DC, IO_disp_RST, IO_disp_BUSY));  // GDEM0213B74 128x250, SSD1680
+GxEPD2_BW<GxEPD2_213_B74, GxEPD2_213_B74::HEIGHT> display(GxEPD2_213_B74(IO_disp_CS, IO_disp_DC, IO_disp_RST, IO_disp_BUSY));  // GDEM0213B74 122x250, SSD1680
 float analogReadBatt();
 void enter_sleep(uint16_t TimedWakeUpSec);
 uint8_t readTouchPins(void);
@@ -27,13 +27,12 @@ void DisplayHomeAssistant(void);
 struct DispData{
   bool valid = false;
   String RawState = "Empty";
+  String LastChangedStr = "Empty";
   //float TamperatureOutside = 0;
   //uint16_t co2 = 0;
 };
 enum mbStates{Menu, HomeAssistant, Badge, FWupdate};
 
-struct DispData ActualDispData;
-bool ScreenUpdate = true;
 uint8_t TouchPins = 0x00;
 uint8_t TouchPinsLast = 0x00;
 uint16_t BattBar = 0;
@@ -55,7 +54,7 @@ void setup() {
   FastLED.addLeds<WS2812B, IO_led, GRB>(leds, 4);
   //touch wakeup
   touchAttachInterrupt(IO_touch3,CallbackTouch3,TOUCH_TRESHOLD); //Middle touch input is wake up interrupt.
-  esp_sleep_enable_touchpad_wakeup();
+  //esp_sleep_enable_touchpad_wakeup(); //disabled intentionally - same effect as reset button.
 
   //Serial.printf("CurrentMode is:%d",CurrentMode);
   switch (esp_sleep_get_wakeup_cause()){
@@ -103,7 +102,7 @@ void DisplayMenu(void){
     display.setCursor(0, 39);
     display.printf("   1. Home Assistant\n\n   2. Badge\n\n   3. FW update");
     display.fillRect(0,20,250,2,GxEPD_BLACK);
-    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+    display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
   uint8_t flipLED = 1;
   uint32_t lastMillis = 0;
@@ -138,6 +137,7 @@ void DisplayMenu(void){
 void DisplayHomeAssistant(void){
   //LEDs disabled
   //digitalWrite(IO_led_enable_n,LOW);
+  DispData ActualDispData;
 
   if(MakerBadgeSetupWiFi()){
     enter_sleep(HA_UPDATE_PERIOD_SEC);
@@ -156,10 +156,15 @@ void DisplayHomeAssistant(void){
     display.setCursor(0, 12);
     display.print("    Home Assistant");
     display.setFont(&FreeMonoBold12pt7b);
-    display.fillRect(0,18,250,1,GxEPD_BLACK);
-    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+    display.fillRect(0,18,250,1,GxEPD_BLACK); //line below Home Assistant heading
+    display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
     display.setCursor(0, 39);
     display.print(ActualDispData.RawState);
+#if SHOW_LAST_UPDATE
+    display.setFont(NULL); // default 5x7 system font?
+    display.setCursor(23, DISP_Y-10);
+    display.print(ActualDispData.LastChangedStr);
+#endif
   } while (display.nextPage());
 
   enter_sleep(HA_UPDATE_PERIOD_SEC);
@@ -186,7 +191,7 @@ void DisplayBadge(void){
     display.print(" _maker");
     display.setCursor(45, 100);
     display.print(" keep making...");
-    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+    display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
   digitalWrite(IO_led_enable_n,HIGH);
   display.powerOff();
@@ -210,7 +215,7 @@ void FWloadMode(void){
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(50, 90);
     display.printf("Batt %.2f V",analogReadBatt());
-    display.fillRect(0,DISP_Y-8,BattBar,2,GxEPD_BLACK);
+    display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
   uint8_t ledrotate = 0;
   while(1){
@@ -331,20 +336,29 @@ struct DispData httpParseReply(String payload){
   //TODO find and parse: "state":"lalalalalalalla1234",
   //Serial.print("HTML GET REPLY:");
   //Serial.println(payload);
-  int StateIndex = payload.indexOf("\"state\":\"");
-  if (StateIndex == -1){
+
+  DispData ActualDispData;
+
+  int SearchIndex = payload.indexOf("\"state\":\"");
+  if (SearchIndex == -1){
     ActualDispData.valid = false;
     ActualDispData.RawState = "not valid";
     return ActualDispData;
   }
-  int StateIndexEnd = payload.indexOf("\"",StateIndex+10); //+10 for skipping "state":" string
-  DispData ActualDispData;
-  //Serial.printf("indexes %d - %d\n",StateIndex,StateIndexEnd);
-  String StateStr = payload.substring(StateIndex+9,StateIndexEnd);
+  int SearchIndexEnd = payload.indexOf("\"",SearchIndex+10); //+10 for skipping "state":" string
+  
+  //Serial.printf("indexes %d - %d\n",SearchIndex,SearchIndexEnd);
+  ActualDispData.RawState = payload.substring(SearchIndex+9,SearchIndexEnd);
   //Serial.print("ISOLATED STATE:");
   //Serial.println(StateStr);
+#if SHOW_LAST_UPDATE
+  SearchIndex = payload.indexOf("\"last_changed\":\"");
+  if (SearchIndex != -1){
+    SearchIndexEnd = payload.indexOf("\"",SearchIndex+20);
+    ActualDispData.LastChangedStr = payload.substring(SearchIndex+16,SearchIndexEnd);
+  }
+#endif
   ActualDispData.valid = true;
-  ActualDispData.RawState = StateStr;
   return ActualDispData;
 }
 
