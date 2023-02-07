@@ -17,5 +17,5 @@
 #define TOUCH_TRESHOLD 20000 //ca. 15000 when empty, 30k for touch
 
 //settings
-#define HA_UPDATE_PERIOD_SEC 600
-#define SHOW_LAST_UPDATE 1
+#define HA_UPDATE_PERIOD_SEC 400
+#define SHOW_LAST_UPDATE 0

@@ -348,9 +348,12 @@ struct DispData httpParseReply(String payload){
   int SearchIndexEnd = payload.indexOf("\"",SearchIndex+10); //+10 for skipping "state":" string
   
   //Serial.printf("indexes %d - %d\n",SearchIndex,SearchIndexEnd);
+  ActualDispData.valid = true;
   ActualDispData.RawState = payload.substring(SearchIndex+9,SearchIndexEnd);
+  ActualDispData.RawState.replace("\\n","\n"); //home assistant cannot send new line. sends \n in text instead. Replace by real new line here.
   //Serial.print("ISOLATED STATE:");
   //Serial.println(StateStr);
+
 #if SHOW_LAST_UPDATE
   SearchIndex = payload.indexOf("\"last_changed\":\"");
   if (SearchIndex != -1){
@@ -358,7 +361,6 @@ struct DispData httpParseReply(String payload){
     ActualDispData.LastChangedStr = payload.substring(SearchIndex+16,SearchIndexEnd);
   }
 #endif
-  ActualDispData.valid = true;
   return ActualDispData;
 }
 
