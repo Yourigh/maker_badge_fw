@@ -1,3 +1,9 @@
+/*
+Juraj Repcik
+
+Before compiling, create credentials.h (copy and edit credentials_template.h). 
+*/
+
 #include "OTA.h"
 #include "credentials.h"
 #include "FastLED.h"
@@ -184,7 +190,7 @@ void DisplayBadge(void){
   do {
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(0, 30);
-    display.print("Juraj Repcik");
+    display.print(BadgeName);
     //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(70, 70);
