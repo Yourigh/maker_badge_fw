@@ -1,3 +1,9 @@
+/*
+Juraj Repcik
+
+Before compiling, create credentials.h (copy and edit credentials_template.h). 
+*/
+
 #include "OTA.h"
 #include "credentials.h"
 #include "FastLED.h"
@@ -184,7 +190,7 @@ void DisplayBadge(void){
   do {
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(0, 30);
-    display.print("Juraj Repcik");
+    display.print(BadgeName);
     //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(70, 70);
@@ -348,9 +354,12 @@ struct DispData httpParseReply(String payload){
   int SearchIndexEnd = payload.indexOf("\"",SearchIndex+10); //+10 for skipping "state":" string
   
   //Serial.printf("indexes %d - %d\n",SearchIndex,SearchIndexEnd);
+  ActualDispData.valid = true;
   ActualDispData.RawState = payload.substring(SearchIndex+9,SearchIndexEnd);
+  ActualDispData.RawState.replace("\\n","\n"); //home assistant cannot send new line. sends \n in text instead. Replace by real new line here.
   //Serial.print("ISOLATED STATE:");
   //Serial.println(StateStr);
+
 #if SHOW_LAST_UPDATE
   SearchIndex = payload.indexOf("\"last_changed\":\"");
   if (SearchIndex != -1){
@@ -358,7 +367,6 @@ struct DispData httpParseReply(String payload){
     ActualDispData.LastChangedStr = payload.substring(SearchIndex+16,SearchIndexEnd);
   }
 #endif
-  ActualDispData.valid = true;
   return ActualDispData;
 }
 
