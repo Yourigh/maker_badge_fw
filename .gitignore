@@ -57,5 +57,5 @@ dkms.conf
 .vscode/launch.json
 .vscode/ipch
 
-credentials.h
+config.h
 README

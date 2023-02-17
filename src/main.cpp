@@ -1,18 +1,21 @@
 /*
 Juraj Repcik
 
-Before compiling, create credentials.h (copy and edit credentials_template.h). 
+Before compiling, create config.h (copy and edit config_template.h). 
 */
 
 #include "OTA.h"
-#include "credentials.h"
+#include "config.h"
 #include "FastLED.h"
-#include "MakerBadgePins.h"
 #include "GxEPD2_BW.h"
 #include <HTTPClient.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
+#ifdef MakerBadgeVersion1
+  #include "soc/soc.h"
+  #include "soc/rtc_cntl_reg.h"
+#endif
 
 CRGB leds[4];
 // Instantiate the GxEPD2_BW class for our display type
@@ -45,6 +48,9 @@ uint16_t BattBar = 0;
 RTC_DATA_ATTR mbStates CurrentMode = Menu; //to store in ULP, kept during deep sleep
 
 void setup() {
+  #ifdef MakerBadgeVersion1
+    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector - hot fix for voltage drop on reboot or wifi connection.
+  #endif
   //Serial
   Serial.begin(115200);
   //ADC
@@ -237,15 +243,10 @@ float analogReadBatt(){
   return (2.0*(2.50*analogRead(AIN_batt)/4096)); //volts float
 }
 
+//when 0, enters sleep without timed wakeup - sleeps forever.
 void enter_sleep(uint16_t TimedWakeUpSec){
   if (TimedWakeUpSec != 0){
-    if (ESP_OK != esp_sleep_enable_timer_wakeup(TimedWakeUpSec*1000000)){
-      //out of range
-      digitalWrite(IO_led_enable_n,LOW);
-      leds[0]=CRGB(255,0,0);
-      FastLED.show();
-      delay(500);
-    }
+    esp_sleep_enable_timer_wakeup(TimedWakeUpSec*1000000);
   }
   digitalWrite(IO_led_enable_n,HIGH);
   //display.powerOff();
