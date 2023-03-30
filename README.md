@@ -31,6 +31,9 @@ Pro tip: For better serial debugging add 3s delay on the start of the `setup()` 
 # Hardware
 Hardware for a makerbadge made by [@dronecz](https://github.com/dronecz/maker_badge).
 
+## Known bugs
+* up to revision C (C included), badge sometimes "forgets" where in menu it was when waking up from deep sleep. This is caused by voltage drop on ESP32-S2 power pin during high load in wake-up. Hot fix is possible in HW (how-to TBD).
+
 ## Where to by HW? 
 [Makermarket](http://makermarket.cz/)
 
