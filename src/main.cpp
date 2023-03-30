@@ -12,10 +12,6 @@ Before compiling, create config.h (copy and edit config_template.h).
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
-#ifdef MakerBadgeVersion1
-  #include "soc/soc.h"
-  #include "soc/rtc_cntl_reg.h"
-#endif
 
 CRGB leds[4];
 // Instantiate the GxEPD2_BW class for our display type
@@ -48,9 +44,6 @@ uint16_t BattBar = 0;
 RTC_DATA_ATTR mbStates CurrentMode = Menu; //to store in ULP, kept during deep sleep
 
 void setup() {
-  #ifdef MakerBadgeVersion1
-    WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //disable brownout detector - hot fix for voltage drop on reboot or wifi connection.
-  #endif
   //Serial
   Serial.begin(115200);
   //ADC

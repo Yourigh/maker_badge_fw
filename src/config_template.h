@@ -1,4 +1,6 @@
-#define MakerBadgeVersion1 //enter 1 for A or B or C. number 2 is reserved for next version.
+//ENTER MAKERBADGE VERSION (found on back side near USB-C connector)
+#define MakerBadgeVersionABC
+//#define MakerBadgeVersionD
 
 //CREDENTIALS
 #define mySSID "blabla"
@@ -13,9 +15,9 @@
 #define SHOW_LAST_UPDATE 0 //shows last update date and time in small font on the display, for debug
 
 //BADGE BASIC SETUP - for quick setup, adjust alignmant in code if needed
-#define BadgeName " Hi Maker!"
-#define BadgeLine2 "my badge"
-#define BadgeLine3 "__text_2_text__"
+#define BadgeName "Jmeno Primeni"
+#define BadgeLine2 " _maker"
+#define BadgeLine3 "Firma/Projekt"
 
 //MakerBadge Pins
 #define IO_led_enable_n 21
