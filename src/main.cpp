@@ -59,24 +59,31 @@ uint16_t BattBar = 0;
 RTC_DATA_ATTR mbStates CurrentMode = Menu; //to store in ULP, kept during deep sleep
 
 void setup() {
-  //delay(3000); //uncomment to see first serial logs on USB serial, delay while windows recognizes the USB and conencts to serial
+  delay(3000); //uncomment to see first serial logs on USB serial, delay while windows recognizes the USB and conencts to serial
   //Serial
   Serial.begin(115200);
   //ADC
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
+  
   //Display
+  pinMode(IO_EPD_power_disable,OUTPUT);
+  digitalWrite(IO_EPD_power_disable,LOW); //enable power to EPD
+  //delay(1000); //TODO, adjust delay.
   display.init(0); //enter 115200 instead 0 to see debug in console
   display.setRotation(3);
   display.setTextColor(GxEPD_BLACK);
+  
   //LEDs
   pinMode(IO_led_enable_n,OUTPUT);
   digitalWrite(IO_led_enable_n,HIGH);
   FastLED.addLeds<WS2812B, IO_led, GRB>(leds, 4);
+  
   //touch wakeup
   //touchAttachInterrupt(IO_touch3,CallbackTouch3,TOUCH_TRESHOLD); //Middle touch input is wake up interrupt.
   //esp_sleep_enable_touchpad_wakeup(); //disabled intentionally - same effect as reset button.
 
+  //Wake up and resume to last mode.
   //Serial.printf("CurrentMode is:%d",CurrentMode);
   switch (esp_sleep_get_wakeup_cause()){
     case ESP_SLEEP_WAKEUP_TIMER:
@@ -209,9 +216,9 @@ void DisplayBadge(void){
     //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(70, 70);
-    display.print(" _maker");
+    display.print(BadgeLine2);
     display.setCursor(45, 100);
-    display.print(" keep making...");
+    display.print(BadgeLine3);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
   digitalWrite(IO_led_enable_n,HIGH);

@@ -22,8 +22,10 @@ This guide is made for programming makerbadge in Platformio IDE in VScode.
     [platformio]
     default_envs = esp32-s2-USB
     ```
+2. Connect USB-C to PC and put Makerbadge to download mode (hold BOOT and click RESET)
+2. Open command line in VScode and run `pio run --target erase`. Result should say `Chip erase completed successfully in...`. Error on the end is ok.
 2. Rename `config_template.h` to `config.h` (enter your name if you want)
-3. Hit **Upload**
+3. Hit **Upload** (for the first upload, MB need to be in download mode)
 4. Arduino code should run. 
 
 Pro tip: For better serial debugging add 3s delay on the start of the `setup()` by uncommenting `delay(3000);`, so COM port has time to connect before you log anything. Don't forget to comment it in final code. 

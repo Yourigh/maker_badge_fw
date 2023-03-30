@@ -1,6 +1,8 @@
 //ENTER MAKERBADGE VERSION (found on back side near USB-C connector)
-#define MakerBadgeVersionABC
-//#define MakerBadgeVersionD
+//#define MakerBadgeVersionA
+//#define MakerBadgeVersionB
+//#define MakerBadgeVersionC
+#define MakerBadgeVersionD
 
 //CREDENTIALS
 #define mySSID "blabla"
