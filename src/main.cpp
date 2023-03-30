@@ -1,22 +1,29 @@
 /*
 Juraj Repcik
 
-Before compiling, create credentials.h (copy and edit credentials_template.h). 
+Before compiling, create config.h (copy and edit config_template.h). 
 */
 
 #include "OTA.h"
-#include "credentials.h"
+#include "config.h"
 #include "FastLED.h"
-#include "MakerBadgePins.h"
 #include "GxEPD2_BW.h"
 #include <HTTPClient.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
 
+// array for addressable LEDs control
 CRGB leds[4];
 // Instantiate the GxEPD2_BW class for our display type
+
+//TODO - choose correct display according to MB version.
+#if defined(MakerBadgeVersionA) || defined(MakerBadgeVersionB)
+#error "Define correct display type. TODO for version A and B. Did you get MakerBadge at Maker Faire Brno 2022 or later? try revision C (in config.h)"
+#endif
+#if defined(MakerBadgeVersionC) || defined(MakerBadgeVersionD)
 GxEPD2_BW<GxEPD2_213_B74, GxEPD2_213_B74::HEIGHT> display(GxEPD2_213_B74(IO_disp_CS, IO_disp_DC, IO_disp_RST, IO_disp_BUSY));  // GDEM0213B74 122x250, SSD1680
+#endif
 float analogReadBatt();
 void enter_sleep(uint16_t TimedWakeUpSec);
 uint8_t readTouchPins(void);
@@ -30,6 +37,7 @@ struct DispData httpParseReply(String payload);
 void DisplayMenu(void);
 void DisplayHomeAssistant(void);
 
+//Structure for getting data from Home Assistant
 struct DispData{
   bool valid = false;
   String RawState = "Empty";
@@ -37,21 +45,28 @@ struct DispData{
   //float TamperatureOutside = 0;
   //uint16_t co2 = 0;
 };
+
+//States of menu
 enum mbStates{Menu, HomeAssistant, Badge, FWupdate};
+
 
 uint8_t TouchPins = 0x00;
 uint8_t TouchPinsLast = 0x00;
 uint16_t BattBar = 0;
+
+//Variable for remembering current mode (mbStates) while in deep sleep. 
+//The memory space for this var is in ULP (ultra-low-power coprocessor) that is powered even in deep sleep.
 RTC_DATA_ATTR mbStates CurrentMode = Menu; //to store in ULP, kept during deep sleep
 
 void setup() {
+  //delay(3000); //uncomment to see first serial logs on USB serial, delay while windows recognizes the USB and conencts to serial
   //Serial
   Serial.begin(115200);
   //ADC
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
   //Display
-  display.init(0); //enter 115200 to see debug in console
+  display.init(0); //enter 115200 instead 0 to see debug in console
   display.setRotation(3);
   display.setTextColor(GxEPD_BLACK);
   //LEDs
@@ -59,7 +74,7 @@ void setup() {
   digitalWrite(IO_led_enable_n,HIGH);
   FastLED.addLeds<WS2812B, IO_led, GRB>(leds, 4);
   //touch wakeup
-  touchAttachInterrupt(IO_touch3,CallbackTouch3,TOUCH_TRESHOLD); //Middle touch input is wake up interrupt.
+  //touchAttachInterrupt(IO_touch3,CallbackTouch3,TOUCH_TRESHOLD); //Middle touch input is wake up interrupt.
   //esp_sleep_enable_touchpad_wakeup(); //disabled intentionally - same effect as reset button.
 
   //Serial.printf("CurrentMode is:%d",CurrentMode);
@@ -88,7 +103,7 @@ void setup() {
 } //end setup
 
 void loop() {
-  //empty
+  //intentionally empty
 }
 
 void DisplayMenu(void){
@@ -237,32 +252,20 @@ float analogReadBatt(){
   return (2.0*(2.50*analogRead(AIN_batt)/4096)); //volts float
 }
 
+//when 0, enters sleep without timed wakeup - sleeps forever.
 void enter_sleep(uint16_t TimedWakeUpSec){
   if (TimedWakeUpSec != 0){
-    if (ESP_OK != esp_sleep_enable_timer_wakeup(TimedWakeUpSec*1000000)){
-      //out of range
-      digitalWrite(IO_led_enable_n,LOW);
-      leds[0]=CRGB(255,0,0);
-      FastLED.show();
-      delay(500);
-    }
+    esp_sleep_enable_timer_wakeup(TimedWakeUpSec*1000000);
   }
   digitalWrite(IO_led_enable_n,HIGH);
   //display.powerOff();
   esp_deep_sleep_start();
-  //MakerBadge B
-  //A: 569uA - no wakeup enabled, deep sleep, with display
-  //B: 119uA - no wakeup enabled, deep sleep, without display (disconnected)
-  //C: 579uA - as A+touch wakup
-  //D: 577uA - as A but enabled touch and timed wakup
-  //measured on pin header - 3V3 
-  //additional 200uA (batt sense) + 60uA (LDO) estimated
 }
 
 /**
  * @brief Reads touch pins
  * 
- * @return uint8_t 0bxx54321 where 54321 are touch inputs.
+ * @return uint8_t 0bxx54321 where 54321 are touch inputs. 1 is the one on the left.
  */
 uint8_t readTouchPins() {
   uint16_t touchread;
@@ -316,7 +319,7 @@ String httpGETRequest(const char* serverName) {
   
   // If you need Node-RED/server authentication, insert user and password below
   //http.setAuthorization("REPLACE_WITH_SERVER_USERNAME", "REPLACE_WITH_SERVER_PASSWORD");
-  http.addHeader("Authorization",HAtoken);
+  http.addHeader("Authorization",HAtoken); //authorization for home assistant
 
   // Send HTTP POST request
   int httpResponseCode = http.GET();
