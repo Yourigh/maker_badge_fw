@@ -209,9 +209,9 @@ void DisplayBadge(void){
     //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(70, 70);
-    display.print(" _maker");
+    display.print(BadgeLine2);
     display.setCursor(45, 100);
-    display.print(" keep making...");
+    display.print(BadgeLine3);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
   digitalWrite(IO_led_enable_n,HIGH);
