@@ -25,11 +25,23 @@ This guide is made for programming makerbadge in Platformio IDE in VScode.
     ```
 2. Connect USB-C to PC and put Makerbadge to download mode (hold BOOT and click RESET)
 3. Rename `config_template.h` to `config.h` (enter your name if you want)
-4. Hit **Upload** (for the first upload, MB need to be in download mode)
-5. Arduino code should run. 
+4. Verify in `config.h` that you have the correct Maker Badge version selected.
+5. Hit **Upload** (for the first upload, MB need to be in download mode)
+6. Arduino code should run. 
 
 Pro tip: 
 * For better serial debugging add 3s delay on the start of the `setup()` by uncommenting `delay(3000);`, so COM port has time to connect before you log anything. Don't forget to comment it in final code. 
+
+### Do you want to use Arduino IDE? No problem.
+
+1. Make a new folder (`makerbadge`) in your pc.
+2. Copy src/main.cpp and rename to `makebadge.ino` and place to foler
+3. Copy `config_template.h`, place to folder and rename to `config.h` and verify in `config.h` that you have the correct Maker Badge version selected.
+4. Copy `OTA.h` to the folder
+5. Install missing libraries (FastLED by Daniel Garcia and GxEPD2)
+6. Select Adafruit Feather ESP32-S2 board
+7. Put Badge into download mode
+8. Upload.
 
 ### Upload debug
 
