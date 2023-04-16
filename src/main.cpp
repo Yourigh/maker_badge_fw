@@ -64,6 +64,15 @@ void setup() {
   //delay(3000); //uncomment to see first serial logs on USB serial, delay while windows recognizes the USB and conencts to serial
   //Serial.printf("[%d] Start\n",millis());
 
+#ifdef MakerBadgeVersionD
+  //Battery voltage reading 
+  //can be read right after High->Low transition of IO_BAT_meas_disable
+  //Here, pin should not go LOW, so intentionally digitalWrite called as first.
+  //First write output register (PORTx) then activate output direction (DDRx). Pin will go from highZ(sleep) to HIGH without LOW pulse.
+  digitalWrite(IO_BAT_meas_disable,HIGH); 
+  pinMode(IO_BAT_meas_disable,OUTPUT); 
+#endif
+
   //Serial
   Serial.begin(115200);
   //ADC
@@ -84,12 +93,7 @@ void setup() {
   display.setRotation(3);
   display.setTextColor(GxEPD_BLACK);
 
-#ifdef MakerBadgeVersionD
-  //Battery voltage reading 
-  //can be read right after High->Low transition of IO_BAT_meas_disable
-  pinMode(IO_BAT_meas_disable,OUTPUT);
-  digitalWrite(IO_BAT_meas_disable,HIGH);
-#endif
+
 
   touch_pad_init(); //deinit is needed when going to sleep. Without deinit - extra 100uA. done in enter sleep function
   //touch wakeup, uncomment if you want to wake up on touch pin.
@@ -184,6 +188,7 @@ void DisplayMenu(void){
 void DisplayHomeAssistant(void){
   //LEDs disabled
   DispData ActualDispData;
+  BattBar = ((analogReadBatt()*10-32)*25); //measure battery before connecting to WiFi - if empty, will shutdown.
 
   if(MakerBadgeSetupWiFi()){
     enter_sleep(HA_UPDATE_PERIOD_SEC); //on fail
@@ -191,7 +196,6 @@ void DisplayHomeAssistant(void){
   //No OTA is set up to save energy, FWupdate mode is for OTA
   display.setFont(&FreeMonoBold9pt7b);
   
-  BattBar = ((analogReadBatt()*10-32)*25);
   //Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
   //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test of HA - should get API RUNNING
   ActualDispData = httpParseReply(httpGETRequest(HAreqURL));
@@ -243,6 +247,7 @@ void DisplayBadge(void){
 }
 
 void FWloadMode(void){
+  BattBar = ((analogReadBatt()*10-32)*25);
   digitalWrite(IO_led_disable,LOW);
   leds[0] = CRGB(0,0,50); //Blue, connecting
   FastLED.show();
@@ -251,7 +256,6 @@ void FWloadMode(void){
   display.setFullWindow();
   display.firstPage();
   display.setTextWrap(false);
-  BattBar = ((analogReadBatt()*10-32)*25);
   uint8_t mac[6];
   WiFi.macAddress(mac);
   do {
@@ -292,7 +296,7 @@ float analogReadBatt(){
 #endif
   float battv = (BATT_V_CAL_SCALE*2.0*(2.50*batt_adc/4096));
   Serial.printf("Battv: %fV, Bat w/ calibration %fV, raw ADC %d\n",battv/BATT_V_CAL_SCALE,battv,batt_adc);
-  if(battv<3.45){
+  if(battv<3.45){ //3.3V is sustem power, 150mV is LDO dropoff (estimates only)
     Serial.printf("Bat %fV, shutting down...\n",battv,batt_adc);
     //ESP_LOGE("MakerBadge","Batt %f V",battv); //log to HW UART
     low_battery_shutdown();
@@ -302,7 +306,25 @@ float analogReadBatt(){
 
 //shutdown the system to protect battery
 void low_battery_shutdown(void){
-  //TODO display message on display
+  digitalWrite(IO_led_disable,HIGH);
+  //display badge, but without battery measurement, show discharged.
+  display.setFont(&FreeMonoBold18pt7b);
+    display.setFullWindow();
+    display.firstPage();
+    display.setTextWrap(false);
+    do {
+      display.fillScreen(GxEPD_WHITE);
+      display.setCursor(0, 30);
+      display.print(BadgeName);
+      display.setFont(&FreeMonoBold9pt7b);
+      display.setCursor(70, 70);
+      display.print(BadgeLine2);
+      display.setCursor(45, 100);
+      display.print(BadgeLine3);
+      display.setCursor(55, DISP_Y-5);
+      display.print("Discharged!");
+    } while (display.nextPage());
+    display.powerOff();
   enter_sleep(0);
 }
 
