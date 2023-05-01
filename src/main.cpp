@@ -140,7 +140,7 @@ void DisplayMenu(void){
   display.setFullWindow();
   display.firstPage();
   display.setTextWrap(true);
-  BattBar = ((analogReadBatt()*10-32)*25);
+  BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
   do {
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(0, 12);
@@ -188,7 +188,7 @@ void DisplayMenu(void){
 void DisplayHomeAssistant(void){
   //LEDs disabled
   DispData ActualDispData;
-  BattBar = ((analogReadBatt()*10-32)*25); //measure battery before connecting to WiFi - if empty, will shutdown.
+  BattBar = ((analogReadBatt()*10-34)*31); //measure battery before connecting to WiFi - if empty, will shutdown.
 
   if(MakerBadgeSetupWiFi()){
     enter_sleep(HA_UPDATE_PERIOD_SEC); //on fail
@@ -228,7 +228,7 @@ void DisplayBadge(void){
   display.setFullWindow();
   display.firstPage();
   display.setTextWrap(false);
-  BattBar = ((analogReadBatt()*10-32)*25);
+  BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
   do {
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(0, 30);
@@ -247,7 +247,7 @@ void DisplayBadge(void){
 }
 
 void FWloadMode(void){
-  BattBar = ((analogReadBatt()*10-32)*25);
+  BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
   digitalWrite(IO_led_disable,LOW);
   leds[0] = CRGB(0,0,50); //Blue, connecting
   FastLED.show();
