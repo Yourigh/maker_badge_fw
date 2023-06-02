@@ -107,7 +107,8 @@ void setup() {
   display.setRotation(3);
   display.setTextColor(GxEPD_BLACK);
 
-
+  //BOOT button
+  pinMode(0,INPUT_PULLUP);
 
   touch_pad_init(); //deinit is needed when going to sleep. Without deinit - extra 100uA. done in enter sleep function
   //touch wakeup, uncomment if you want to wake up on touch pin.
@@ -326,6 +327,7 @@ void Playground(void){
     Serial.println("ESPNow Init Failed");
   }
   char sendbuff[251];
+  char writebuff[251] = {0};
   snprintf(sendbuff,250,"%s%s",MAGICPREFIX,"Hello World 2 lorem ipsum");
   broadcast(sendbuff);
 
@@ -343,36 +345,26 @@ void Playground(void){
     display.fillScreen(GxEPD_WHITE);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(0, 20);
+    display.setCursor(0, 13);
     display.print(BadgeName+MyMAC.substring(8));
+    display.fillRect(0,20,DISP_X,3,GxEPD_BLACK);
     display.setFont(NULL);
-    display.setCursor(16, 64);
+    display.setCursor(14, 64);
     display.print("123456789|1x|0123456789|2x|0123456789");
-    display.setCursor(16, 64+8);
+    display.setCursor(14, 64+8);
     display.print("ABCDEFGHI|  |JKLMNOPQRS|  |TUVWXYZ_!<");
     display.setCursor(0, 64+8+10);
-    display.print("Write msg with touch binary,BOOT->send!");
+    display.print(" Write msg w/ touch BIN _ BOOT btn sends!");
   } while (display.nextPage());
   uint8_t ledrotate = 0;
-  uint8_t test_rectangle_x=0;
-  uint8_t test_rectangle_y=0;
-  FastLED.clear(true);
   while(1){
     leds[ledrotate++] = CRGB(0,0,0);
+    if (ledrotate == 4) ledrotate = 0;
     leds[ledrotate] = CRGB(10,0,10);
     FastLED.show();
     delay(300);
-    if (ledrotate == 4) ledrotate = 0;
     analogReadBatt(); //for low voltage shutdown
-
-    if(test_rectangle_x-8>DISP_X-8) //intentional underflow
-      test_rectangle_x = -10;
-    display.setPartialWindow(test_rectangle_x, test_rectangle_y, 16, 8);
-    test_rectangle_x+= 8;
-    do {
-      display.fillScreen(GxEPD_WHITE);
-      display.fillRect(test_rectangle_x,test_rectangle_y,8,8,GxEPD_BLACK);
-    } while (display.nextPage());
+    //if new data received
     if(msgLen>0 & 
       espnow_rcv_buffer[0]==MAGICPREFIX[0] & 
       espnow_rcv_buffer[1]==MAGICPREFIX[1] & 
@@ -380,10 +372,11 @@ void Playground(void){
       espnow_rcv_buffer[3]==MAGICPREFIX[3] & 
       espnow_rcv_buffer[4]==MAGICPREFIX[4])
     {
-      display.setPartialWindow(0, 25, DISP_X, 34); //todo, not till the end
-      test_rectangle_x+= 8;
+      display.setPartialWindow(0, 27, DISP_X, 30);
       do {
-        //display.setFont(NULL);//5x7
+        display.fillScreen(GxEPD_WHITE);
+      } while (display.nextPage());
+      do {
         display.setFont(&FreeMonoBold9pt7b);
         display.setCursor(0, 39);
         display.print(&peerMac[9]);//only last 3 bytes
@@ -391,7 +384,7 @@ void Playground(void){
         display.print(&espnow_rcv_buffer[5]); //without magic prefix, write last received message
       } while (display.nextPage());
       msgLen = 0;
-      for(uint8_t lalarm=0;lalarm<8;lalarm++){
+      for(uint8_t lalarm=0;lalarm<4;lalarm++){
         fill_solid(leds,4,CRGB(255,0,00));
         FastLED.show();
         delay(200);
@@ -399,6 +392,18 @@ void Playground(void){
         delay(200);
       }
     }
+    //keyboard and writing message
+    readTouchPins();
+
+    if(digitalRead(0)==0 & writebuff[0]!=0){ //pressed send and not empty string
+      //send message
+      static uint16_t dumcnt = 0;
+      dumcnt++;
+      snprintf(sendbuff,250,"%s%s_%d",MAGICPREFIX,"Written message", dumcnt);
+      broadcast(sendbuff);
+      delay(100); //crappy debounce
+    }
+
   }
 }
 
