@@ -13,6 +13,10 @@ Before compiling, create config.h (copy and edit config_template.h).
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
 #include "driver/touch_pad.h"
+//ESPNOW
+#include <WiFi.h>
+#include <esp_now.h>
+
 
 // array for addressable LEDs control
 CRGB leds[4];
@@ -38,6 +42,16 @@ struct DispData httpParseReply(String payload);
 void DisplayMenu(void);
 void DisplayHomeAssistant(void);
 void low_battery_shutdown(void);
+void Playground(void); 
+//espnow
+void formatMacAddress(const uint8_t *macAddr, char *buffer, int maxLength);
+void receiveCallback(const uint8_t *macAddr, const uint8_t *data, int dataLen);
+void sentCallback(const uint8_t *macAddr, esp_now_send_status_t status);
+void broadcast(const String &message);
+char espnow_rcv_buffer[ESP_NOW_MAX_DATA_LEN + 1];
+int msgLen = 0; //0 is no message, others, message pending
+char peerMac[18];
+#define MAGICPREFIX "*/(MB"
 
 //Structure for getting data from Home Assistant
 struct DispData{
@@ -49,7 +63,7 @@ struct DispData{
 };
 
 //States of menu
-enum mbStates{Menu, HomeAssistant, Badge, FWupdate};
+enum mbStates{Menu, HomeAssistant, Badge, FWupdate, PlaceholderOne};
 
 
 uint8_t TouchPins = 0x00;
@@ -61,8 +75,8 @@ uint16_t BattBar = 0;
 RTC_DATA_ATTR mbStates CurrentMode = Menu; //to store in ULP, kept during deep sleep
 
 void setup() {
-  //delay(3000); //uncomment to see first serial logs on USB serial, delay while windows recognizes the USB and conencts to serial
-  //Serial.printf("[%d] Start\n",millis());
+  delay(3000); //uncomment to see first serial logs on USB serial, delay while windows recognizes the USB and conencts to serial
+  Serial.printf("[%d] Start\n",millis());
 
 #ifdef MakerBadgeVersionD
   //Battery voltage reading 
@@ -115,6 +129,9 @@ void setup() {
         case FWupdate:
           FWloadMode(); //forever powered on, shuts down on low battery
           break;
+        case PlaceholderOne:
+          Playground(); //forever powered on, shuts down on low battery
+          break;
       }
       break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD:
@@ -146,7 +163,7 @@ void DisplayMenu(void){
     display.setCursor(0, 12);
     display.print("   Maker Badge Menu");
     display.setCursor(0, 39);
-    display.printf("   1. Home Assistant\n\n   2. Badge\n\n   3. FW update");
+    display.printf("   1. Home Assistant\n   2. Badge\n   3. FW update\n   4. Playground");
     display.fillRect(0,20,250,2,GxEPD_BLACK);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
@@ -166,8 +183,9 @@ void DisplayMenu(void){
       case 0b00100: //3
         CurrentMode = FWupdate;
         return;
-      //case 0b01000: //4
-      //  return;
+      case 0b01000: //4
+        CurrentMode = PlaceholderOne;
+        return;
       //case 0b10000: //5
         //return;
       default:
@@ -284,6 +302,187 @@ void FWloadMode(void){
     analogReadBatt(); //for low voltage shutdown
   }
 }
+
+void Playground(void){
+
+  Serial.println("Playground-enter");
+  WiFi.mode(WIFI_STA);
+  // Output my MAC address - useful for later
+  Serial.print("My MAC Address is: ");
+  Serial.println(WiFi.macAddress());
+  String MyMAC;
+  MyMAC = WiFi.macAddress();
+  // shut down wifi
+  WiFi.disconnect();
+
+  if (esp_now_init() == ESP_OK)
+  {
+    Serial.println("ESPNow Init Success");
+    esp_now_register_recv_cb(receiveCallback);
+    esp_now_register_send_cb(sentCallback);
+  }
+  else
+  {
+    Serial.println("ESPNow Init Failed");
+  }
+  char sendbuff[251];
+  snprintf(sendbuff,250,"%s%s",MAGICPREFIX,"Hello World 2 lorem ipsum");
+  broadcast(sendbuff);
+
+  BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
+  digitalWrite(IO_led_disable,LOW);
+  leds[0] = CRGB(50,0,50); //Violet
+  FastLED.show();
+  display.setFont(&FreeMonoBold18pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  display.setTextWrap(true);
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
+    display.setFont(&FreeMonoBold9pt7b);
+    display.setCursor(0, 20);
+    display.print(BadgeName+MyMAC.substring(8));
+    display.setFont(NULL);
+    display.setCursor(16, 64);
+    display.print("123456789|1x|0123456789|2x|0123456789");
+    display.setCursor(16, 64+8);
+    display.print("ABCDEFGHI|  |JKLMNOPQRS|  |TUVWXYZ_!<");
+    display.setCursor(0, 64+8+10);
+    display.print("Write msg with touch binary,BOOT->send!");
+  } while (display.nextPage());
+  uint8_t ledrotate = 0;
+  uint8_t test_rectangle_x=0;
+  uint8_t test_rectangle_y=0;
+  FastLED.clear(true);
+  while(1){
+    leds[ledrotate++] = CRGB(0,0,0);
+    leds[ledrotate] = CRGB(10,0,10);
+    FastLED.show();
+    delay(300);
+    if (ledrotate == 4) ledrotate = 0;
+    analogReadBatt(); //for low voltage shutdown
+
+    if(test_rectangle_x-8>DISP_X-8) //intentional underflow
+      test_rectangle_x = -10;
+    display.setPartialWindow(test_rectangle_x, test_rectangle_y, 16, 8);
+    test_rectangle_x+= 8;
+    do {
+      display.fillScreen(GxEPD_WHITE);
+      display.fillRect(test_rectangle_x,test_rectangle_y,8,8,GxEPD_BLACK);
+    } while (display.nextPage());
+    if(msgLen>0 & 
+      espnow_rcv_buffer[0]==MAGICPREFIX[0] & 
+      espnow_rcv_buffer[1]==MAGICPREFIX[1] & 
+      espnow_rcv_buffer[2]==MAGICPREFIX[2] & 
+      espnow_rcv_buffer[3]==MAGICPREFIX[3] & 
+      espnow_rcv_buffer[4]==MAGICPREFIX[4])
+    {
+      display.setPartialWindow(0, 25, DISP_X, 34); //todo, not till the end
+      test_rectangle_x+= 8;
+      do {
+        //display.setFont(NULL);//5x7
+        display.setFont(&FreeMonoBold9pt7b);
+        display.setCursor(0, 39);
+        display.print(&peerMac[9]);//only last 3 bytes
+        display.print(">");
+        display.print(&espnow_rcv_buffer[5]); //without magic prefix, write last received message
+      } while (display.nextPage());
+      msgLen = 0;
+      for(uint8_t lalarm=0;lalarm<8;lalarm++){
+        fill_solid(leds,4,CRGB(255,0,00));
+        FastLED.show();
+        delay(200);
+        FastLED.clear(true);
+        delay(200);
+      }
+    }
+  }
+}
+
+void formatMacAddress(const uint8_t *macAddr, char *buffer, int maxLength)
+{
+  snprintf(buffer, maxLength, "%02x:%02x:%02x:%02x:%02x:%02x", macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
+}
+
+void receiveCallback(const uint8_t *macAddr, const uint8_t *data, int dataLen)
+{
+  // format the mac address
+  //char peerMac[18]; //chenged to global
+  formatMacAddress(macAddr, peerMac, 18);
+  // only allow a maximum of 250 characters in the message + a null terminating byte
+  msgLen = min(ESP_NOW_MAX_DATA_LEN, dataLen);
+  strncpy(espnow_rcv_buffer, (const char *)data, msgLen);
+  // make sure we are null terminated
+  espnow_rcv_buffer[msgLen] = 0;
+  // debug log the message to the serial port
+  Serial.printf("Received message from: %s - %s\n", peerMac, espnow_rcv_buffer);
+}
+
+// callback when data is sent
+void sentCallback(const uint8_t *macAddr, esp_now_send_status_t status)
+{
+  char macStr[18];
+  formatMacAddress(macAddr, macStr, 18);
+  Serial.print("Last Packet Sent to: ");
+  Serial.println(macStr);
+  Serial.print("Last Packet Send Status: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+
+void broadcast(const String &message)
+{
+  // this will broadcast a message to everyone in range
+  uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(&peerInfo.peer_addr, broadcastAddress, 6);
+  if (!esp_now_is_peer_exist(broadcastAddress))
+  {
+    esp_now_add_peer(&peerInfo);
+  }
+  esp_err_t result = esp_now_send(broadcastAddress, (const uint8_t *)message.c_str(), message.length());
+  // and this will send a message to a specific device
+  /*uint8_t peerAddress[] = {0x3C, 0x71, 0xBF, 0x47, 0xA5, 0xC0};
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(&peerInfo.peer_addr, peerAddress, 6);
+  if (!esp_now_is_peer_exist(peerAddress))
+  {
+    esp_now_add_peer(&peerInfo);
+  }
+  esp_err_t result = esp_now_send(peerAddress, (const uint8_t *)message.c_str(), message.length());*/
+  if (result == ESP_OK)
+  {
+    Serial.println("Broadcast message success");
+  }
+  else if (result == ESP_ERR_ESPNOW_NOT_INIT)
+  {
+    Serial.println("ESPNOW not Init.");
+  }
+  else if (result == ESP_ERR_ESPNOW_ARG)
+  {
+    Serial.println("Invalid Argument");
+  }
+  else if (result == ESP_ERR_ESPNOW_INTERNAL)
+  {
+    Serial.println("Internal Error");
+  }
+  else if (result == ESP_ERR_ESPNOW_NO_MEM)
+  {
+    Serial.println("ESP_ERR_ESPNOW_NO_MEM");
+  }
+  else if (result == ESP_ERR_ESPNOW_NOT_FOUND)
+  {
+    Serial.println("Peer not found.");
+  }
+  else
+  {
+    Serial.println("Unknown error");
+  }
+}
+
+
 //---------------------------------
 float analogReadBatt(){
 #ifdef MakerBadgeVersionD
@@ -295,7 +494,7 @@ float analogReadBatt(){
   digitalWrite(IO_BAT_meas_disable,HIGH);
 #endif
   float battv = (BATT_V_CAL_SCALE*2.0*(2.50*batt_adc/4096));
-  Serial.printf("Battv: %fV, Bat w/ calibration %fV, raw ADC %d\n",battv/BATT_V_CAL_SCALE,battv,batt_adc);
+  //Serial.printf("Battv: %fV, Bat w/ calibration %fV, raw ADC %d\n",battv/BATT_V_CAL_SCALE,battv,batt_adc);
   if(battv<3.45){ //3.3V is sustem power, 150mV is LDO dropoff (estimates only)
     Serial.printf("Bat %fV, shutting down...\n",battv,batt_adc);
     //ESP_LOGE("MakerBadge","Batt %f V",battv); //log to HW UART
