@@ -140,7 +140,8 @@ void setup() {
       //define custom action for touch wake up case, and add break;
     default:
       //normal power-up after reset
-      DisplayMenu(); //menu to select a mode. Blocking.
+      Playground(); //DEBUG, only testing.
+      //DisplayMenu(); //menu to select a mode. Blocking.
       enter_sleep(1); //sleeps for 1s and gets back to switch timer wakeup cause.
   }
 } //end setup
@@ -305,6 +306,20 @@ void FWloadMode(void){
 }
 
 void Playground(void){
+  //y first, then x coordinate
+  const char keyboard[4][10] = { 
+        {'1','2','3','4','5','6','7','8','9','0'}, 
+        {'Q','W','E','R','T','Y','U','I','O','P'}, 
+        {'A','S','D','F','G','H','J','K','L','<'},
+        {' ','.','Z','X','C','V','B','N','M','?'}
+        };
+  uint8_t keyboard_xy[2] = {0,2}; //x,y char A
+  uint8_t keyboard_xy_old[2] = {0,0};//x,y 
+  #define kb_x keyboard_xy[0]
+  #define kb_y keyboard_xy[1]
+  #define kbo_x keyboard_xy_old[0]
+  #define kbo_y keyboard_xy_old[1]
+  uint32_t last_writing_ms = 0; //for saving battery, disable cursor blink when not writing.
 
   Serial.println("Playground-enter");
   WiFi.mode(WIFI_STA);
@@ -328,8 +343,10 @@ void Playground(void){
   }
   char sendbuff[251];
   char writebuff[251] = {0};
-  snprintf(sendbuff,250,"%s%s",MAGICPREFIX,"Hello World 2 lorem ipsum");
-  broadcast(sendbuff);
+  uint8_t writebuff_len = 0;
+  bool enter_key_flag = false;
+  //snprintf(sendbuff,250,"%s%s",MAGICPREFIX,"Hello World 2 lorem ipsum");
+  //broadcast(sendbuff);
 
   BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
   digitalWrite(IO_led_disable,LOW);
@@ -349,12 +366,22 @@ void Playground(void){
     display.print(BadgeName+MyMAC.substring(8));
     display.fillRect(0,20,DISP_X,3,GxEPD_BLACK);
     display.setFont(NULL);
-    display.setCursor(14, 64);
-    display.print("123456789|1x|0123456789|2x|0123456789");
-    display.setCursor(14, 64+8);
-    display.print("ABCDEFGHI|  |JKLMNOPQRS|  |TUVWXYZ_!<");
-    display.setCursor(0, 64+8+10);
-    display.print(" Write msg w/ touch BIN _ BOOT btn sends!");
+    display.setCursor(3, 64);
+    display.print("1 2 3 4 5 6 7 8 9 0");
+    display.setCursor(3, 64+11);
+    display.print("Q W E R T Y U I O P");
+    display.setCursor(3, 64+11*2);
+    display.print("A S D F G H J K L <");
+    display.setCursor(3, 64+11*3);
+    display.print("_ . Z X C V B N M ?");
+    display.setCursor(130, 64);
+    display.print("    Touch keys:");
+    display.setCursor(130, 64+11);
+    display.print("DN | UP | OK | < | >");
+    display.setCursor(130, 64+11*2);
+    display.print("   BOOT btn sends!");
+    display.setCursor(130, 64+11*3);
+    display.print("            Message:");
   } while (display.nextPage());
   uint8_t ledrotate = 0;
   while(1){
@@ -362,16 +389,16 @@ void Playground(void){
     if (ledrotate == 4) ledrotate = 0;
     leds[ledrotate] = CRGB(10,0,10);
     FastLED.show();
-    delay(300);
     analogReadBatt(); //for low voltage shutdown
     //if new data received
-    if(msgLen>0 & 
-      espnow_rcv_buffer[0]==MAGICPREFIX[0] & 
-      espnow_rcv_buffer[1]==MAGICPREFIX[1] & 
-      espnow_rcv_buffer[2]==MAGICPREFIX[2] & 
-      espnow_rcv_buffer[3]==MAGICPREFIX[3] & 
+    if(msgLen>0 && 
+      espnow_rcv_buffer[0]==MAGICPREFIX[0] && 
+      espnow_rcv_buffer[1]==MAGICPREFIX[1] && 
+      espnow_rcv_buffer[2]==MAGICPREFIX[2] && 
+      espnow_rcv_buffer[3]==MAGICPREFIX[3] && 
       espnow_rcv_buffer[4]==MAGICPREFIX[4])
     {
+      Serial.println("Received data - update screen");
       display.setPartialWindow(0, 27, DISP_X, 30);
       do {
         display.fillScreen(GxEPD_WHITE);
@@ -393,17 +420,101 @@ void Playground(void){
       }
     }
     //keyboard and writing message
-    readTouchPins();
+    switch(readTouchPins()){
+      case 0b00001: //key 1 (left) (down function)
+        kb_y= kb_y>2 ? 3 : kb_y+1;
+        break;
+      case 0b00010: //2 (up function)
+        kb_y= kb_y==0 ? 0 : kb_y-1;
+        break;
+      case 0b00100: //3  (select function - enter key into write buffer)
+        writebuff_len = strlen(writebuff);
+        if (keyboard[kb_y][kb_x] == '<'){ //backspace
+          writebuff[writebuff_len-1] = 0;
+        } else {
+          writebuff[writebuff_len++] = keyboard[kb_y][kb_x];
+          writebuff[writebuff_len] = 0;
+        }
+        enter_key_flag = true;
+        fill_solid(leds,4,CRGB(0,64,0));
+        FastLED.show();
+        delay(150);
+        FastLED.clear(true);
+        break;
+      case 0b01000: //4  (left function)
+        kb_x= kb_x==0 ? 0 : kb_x-1;
+        break;
+      case 0b10000: //5  (right function)
+        kb_x= kb_x>8 ? 9 : kb_x+1;
+        break;
+      default:
+        break;
+    }
+    if(kb_x!=kbo_x || kb_y!=kbo_y || enter_key_flag){
+    Serial.printf("Keyboard x:%d y:%d char:%c | old  x:%d y:%d char:%c\n",
+      kb_x,kb_y,keyboard[kb_y][kb_x],
+      kbo_x,kbo_y,keyboard[kbo_y][kbo_x]);
+      //delay(100); //adjust depending on display update speed.
+      last_writing_ms = millis();
+    } else {
+      //blink cursor
+      if (last_writing_ms > millis()-300000){ //more than 5s, less than 300s
+        display.setPartialWindow(1+6*strlen(writebuff), 104+8, 2, 8);//y and h multiples of 8
+        static bool cursorblink = true;
+        do {
+          if(cursorblink){
+            display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+          }else{
+            display.fillScreen(GxEPD_BLACK); //remove any horizontal line selector
+          }
+          cursorblink = !cursorblink;
+        } while (display.nextPage());
+      } else {
+        delay(150);
+      }
+    }
+    
+    if(kb_x!=kbo_x){ //x change -> remove old hoirzontal
+      display.setPartialWindow(12*kbo_x, 64, 2, 40);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+      } while (display.nextPage());
+    }
 
-    if(digitalRead(0)==0 & writebuff[0]!=0){ //pressed send and not empty string
+    if(kb_y!=kbo_y || kb_x!=kbo_x){ //y or x change
+      display.setPartialWindow(12*kb_x, 64, 2, 40);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+        display.fillRect(12*kb_x,64+10*kb_y,2, 10,GxEPD_BLACK);
+        } while (display.nextPage());
+    }
+    if(enter_key_flag){
+      Serial.printf("key select update, buffer %s\n",writebuff);
+      
+      display.setPartialWindow(0, 104, DISP_X, 16);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+        display.setCursor(0, 104+8);
+        display.print(writebuff);
+      } while (display.nextPage());
+    }
+
+    if(digitalRead(0)==0 && strlen(writebuff)){ //pressed send and not empty buffer
       //send message
-      static uint16_t dumcnt = 0;
-      dumcnt++;
-      snprintf(sendbuff,250,"%s%s_%d",MAGICPREFIX,"Written message", dumcnt);
+      snprintf(sendbuff,250,"%s%s",MAGICPREFIX,writebuff);
       broadcast(sendbuff);
+      writebuff[0]=0; //clear
+      fill_solid(leds,4,CRGB(32,32,0)); //yellow, indicate sending
+        FastLED.show();
+        delay(150);
+        FastLED.clear(true);
       delay(100); //crappy debounce
     }
 
+    //old marking line removed, update old with recent.
+    kbo_x = kb_x;
+    kbo_y = kb_y;
+    enter_key_flag = false;
   }
 }
 
