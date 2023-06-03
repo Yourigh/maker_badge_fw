@@ -42,7 +42,7 @@ struct DispData httpParseReply(String payload);
 void DisplayMenu(void);
 void DisplayHomeAssistant(void);
 void low_battery_shutdown(void);
-void Playground(void); 
+void MakerCall(void); 
 //espnow
 void formatMacAddress(const uint8_t *macAddr, char *buffer, int maxLength);
 void receiveCallback(const uint8_t *macAddr, const uint8_t *data, int dataLen);
@@ -63,7 +63,7 @@ struct DispData{
 };
 
 //States of menu
-enum mbStates{Menu, HomeAssistant, Badge, FWupdate, PlaceholderOne};
+enum mbStates{Menu, HomeAssistant, Badge, FWupdate, EspNow_sms};
 
 
 uint8_t TouchPins = 0x00;
@@ -75,8 +75,8 @@ uint16_t BattBar = 0;
 RTC_DATA_ATTR mbStates CurrentMode = Menu; //to store in ULP, kept during deep sleep
 
 void setup() {
-  delay(3000); //uncomment to see first serial logs on USB serial, delay while windows recognizes the USB and conencts to serial
-  Serial.printf("[%d] Start\n",millis());
+  //delay(3000); //uncomment to see first serial logs on USB serial, delay while windows recognizes the USB and conencts to serial
+  //Serial.printf("[%d] Start\n",millis());
 
 #ifdef MakerBadgeVersionD
   //Battery voltage reading 
@@ -130,8 +130,8 @@ void setup() {
         case FWupdate:
           FWloadMode(); //forever powered on, shuts down on low battery
           break;
-        case PlaceholderOne:
-          Playground(); //forever powered on, shuts down on low battery
+        case EspNow_sms:
+          MakerCall(); //forever powered on, shuts down on low battery
           break;
       }
       break;
@@ -140,8 +140,7 @@ void setup() {
       //define custom action for touch wake up case, and add break;
     default:
       //normal power-up after reset
-      Playground(); //DEBUG, only testing.
-      //DisplayMenu(); //menu to select a mode. Blocking.
+      DisplayMenu(); //menu to select a mode. Blocking.
       enter_sleep(1); //sleeps for 1s and gets back to switch timer wakeup cause.
   }
 } //end setup
@@ -165,7 +164,7 @@ void DisplayMenu(void){
     display.setCursor(0, 12);
     display.print("   Maker Badge Menu");
     display.setCursor(0, 39);
-    display.printf("   1. Home Assistant\n   2. Badge\n   3. FW update\n   4. Playground");
+    display.printf("   1. Home Assistant\n   2. Badge\n   3. FW update\n   4. MakerCall");
     display.fillRect(0,20,250,2,GxEPD_BLACK);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
@@ -186,7 +185,7 @@ void DisplayMenu(void){
         CurrentMode = FWupdate;
         return;
       case 0b01000: //4
-        CurrentMode = PlaceholderOne;
+        CurrentMode = EspNow_sms;
         return;
       //case 0b10000: //5
         //return;
@@ -253,11 +252,10 @@ void DisplayBadge(void){
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(0, 30);
     display.print(BadgeName);
-    //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(70, 70);
+    display.setCursor(0, 70);
     display.print(BadgeLine2);
-    display.setCursor(45, 100);
+    display.setCursor(0, 100);
     display.print(BadgeLine3);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
@@ -305,7 +303,7 @@ void FWloadMode(void){
   }
 }
 
-void Playground(void){
+void MakerCall(void){
   //y first, then x coordinate
   const char keyboard[4][10] = { 
         {'1','2','3','4','5','6','7','8','9','0'}, 
@@ -319,9 +317,8 @@ void Playground(void){
   #define kb_y keyboard_xy[1]
   #define kbo_x keyboard_xy_old[0]
   #define kbo_y keyboard_xy_old[1]
-  uint32_t last_writing_ms = 0; //for saving battery, disable cursor blink when not writing.
 
-  Serial.println("Playground-enter");
+  Serial.println("MakerCall-enter");
   WiFi.mode(WIFI_STA);
   // Output my MAC address - useful for later
   Serial.print("My MAC Address is: ");
@@ -373,15 +370,15 @@ void Playground(void){
     display.setCursor(3, 64+11*2);
     display.print("A S D F G H J K L <");
     display.setCursor(3, 64+11*3);
-    display.print("_ . Z X C V B N M ?");
+    display.print(". Z X C V _ B N M ?");
     display.setCursor(130, 64);
-    display.print("    Touch keys:");
+    display.print("     MAKERCALL");
     display.setCursor(130, 64+11);
     display.print("DN | UP | OK | < | >");
     display.setCursor(130, 64+11*2);
-    display.print("   BOOT btn sends!");
+    display.print(" BOOT btn sends to");
     display.setCursor(130, 64+11*3);
-    display.print("            Message:");
+    display.print(" all MakerBadges!");
   } while (display.nextPage());
   uint8_t ledrotate = 0;
   while(1){
@@ -418,14 +415,16 @@ void Playground(void){
         FastLED.clear(true);
         delay(200);
       }
+      display.setFont(NULL); //prepare font for next time.
+      display.setTextWrap(false);
     }
     //keyboard and writing message
     switch(readTouchPins()){
       case 0b00001: //key 1 (left) (down function)
-        kb_y= kb_y>2 ? 3 : kb_y+1;
+        kb_y= kb_y>2 ? 0 : kb_y+1;
         break;
       case 0b00010: //2 (up function)
-        kb_y= kb_y==0 ? 0 : kb_y-1;
+        kb_y= kb_y==0 ? 3 : kb_y-1;
         break;
       case 0b00100: //3  (select function - enter key into write buffer)
         writebuff_len = strlen(writebuff);
@@ -442,36 +441,19 @@ void Playground(void){
         FastLED.clear(true);
         break;
       case 0b01000: //4  (left function)
-        kb_x= kb_x==0 ? 0 : kb_x-1;
+        kb_x= kb_x==0 ? 9 : kb_x-1;
         break;
       case 0b10000: //5  (right function)
-        kb_x= kb_x>8 ? 9 : kb_x+1;
+        kb_x= kb_x>8 ? 0 : kb_x+1;
         break;
       default:
+        delay(150);
         break;
     }
     if(kb_x!=kbo_x || kb_y!=kbo_y || enter_key_flag){
     Serial.printf("Keyboard x:%d y:%d char:%c | old  x:%d y:%d char:%c\n",
       kb_x,kb_y,keyboard[kb_y][kb_x],
       kbo_x,kbo_y,keyboard[kbo_y][kbo_x]);
-      //delay(100); //adjust depending on display update speed.
-      last_writing_ms = millis();
-    } else {
-      //blink cursor
-      if (last_writing_ms > millis()-300000){ //more than 5s, less than 300s
-        display.setPartialWindow(1+6*strlen(writebuff), 104+8, 2, 8);//y and h multiples of 8
-        static bool cursorblink = true;
-        do {
-          if(cursorblink){
-            display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
-          }else{
-            display.fillScreen(GxEPD_BLACK); //remove any horizontal line selector
-          }
-          cursorblink = !cursorblink;
-        } while (display.nextPage());
-      } else {
-        delay(150);
-      }
     }
     
     if(kb_x!=kbo_x){ //x change -> remove old hoirzontal
@@ -503,11 +485,19 @@ void Playground(void){
       //send message
       snprintf(sendbuff,250,"%s%s",MAGICPREFIX,writebuff);
       broadcast(sendbuff);
-      writebuff[0]=0; //clear
+      
       fill_solid(leds,4,CRGB(32,32,0)); //yellow, indicate sending
         FastLED.show();
         delay(150);
         FastLED.clear(true);
+      display.setPartialWindow(0, 104, DISP_X, 16);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+        display.setCursor(0, 104+8);
+        display.print("Sent> ");
+        display.print(writebuff);
+      } while (display.nextPage());
+      writebuff[0]=0; //clear
       delay(100); //crappy debounce
     }
 
@@ -634,7 +624,7 @@ void low_battery_shutdown(void){
       display.setFont(&FreeMonoBold9pt7b);
       display.setCursor(70, 70);
       display.print(BadgeLine2);
-      display.setCursor(45, 100);
+      display.setCursor(0, 100);
       display.print(BadgeLine3);
       display.setCursor(55, DISP_Y-5);
       display.print("Discharged!");
