@@ -345,13 +345,8 @@ void MakerCall(void){
   char writebuff[251] = {0};
   uint8_t writebuff_len = 0;
   bool enter_key_flag = false;
-  //snprintf(sendbuff,250,"%s%s",MAGICPREFIX,"Hello World 2 lorem ipsum");
-  //broadcast(sendbuff);
 
   BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
-  digitalWrite(IO_led_disable,LOW);
-  leds[0] = CRGB(50,0,50); //Violet
-  FastLED.show();
   display.setFont(&FreeMonoBold18pt7b);
   display.setFullWindow();
   display.firstPage();
@@ -383,13 +378,30 @@ void MakerCall(void){
     display.setCursor(130, 64+11*3);
     display.print(" all MakerBadges!");
   } while (display.nextPage());
-  uint8_t ledrotate = 0;
+  //uint8_t ledrotate = 0;
+
+  if (!setCpuFrequencyMhz(80)) //to save power - decreses consumption from 82mA to 76mA
+    Serial.println("Error - Not valid frequency!");
+  uint32_t last_battbar_update = 0;
+
   while(1){
-    leds[ledrotate++] = CRGB(0,0,0);
-    if (ledrotate == 4) ledrotate = 0;
-    leds[ledrotate] = CRGB(10,0,10);
-    FastLED.show();
-    analogReadBatt(); //for low voltage shutdown
+    //leds[ledrotate++] = CRGB(0,0,0);
+    //if (ledrotate == 4) ledrotate = 0;
+    //leds[ledrotate] = CRGB(10,0,10);
+    //FastLED.show();
+    
+    if(millis()> last_battbar_update + 60000){ //60s
+      BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
+      //will shutdown on low voltage
+      display.setPartialWindow(0, 120, DISP_X, 8);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE);
+        display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
+      } while (display.nextPage());
+
+      last_battbar_update = millis();
+    } 
+
     //if new data received
     if(msgLen>0 && 
       espnow_rcv_buffer[0]==MAGICPREFIX[0] && 
@@ -412,7 +424,9 @@ void MakerCall(void){
         display.print(&espnow_rcv_buffer[5]); //without magic prefix, write last received message
       } while (display.nextPage());
       msgLen = 0;
+      digitalWrite(IO_led_disable,LOW);
       for(uint8_t lalarm=0;lalarm<4;lalarm++){
+        
         fill_solid(leds,4,CRGB(255,0,00));
         FastLED.show();
         delay(200);
@@ -421,6 +435,7 @@ void MakerCall(void){
       }
       display.setFont(NULL); //prepare font for next time.
       display.setTextWrap(false);
+      digitalWrite(IO_led_disable,HIGH);
     }
     //keyboard and writing message
     switch(readTouchPins()){
@@ -438,12 +453,14 @@ void MakerCall(void){
           writebuff[writebuff_len++] = keyboard[kb_y][kb_x];
           writebuff[writebuff_len] = 0;
         }
+        digitalWrite(IO_led_disable,LOW);
         enter_key_flag = true;
         fill_solid(leds,4,CRGB(0,64,0));
         FastLED.show();
         delay(150);
         FastLED.clear(true);
         break;
+        digitalWrite(IO_led_disable,HIGH);
       case 0b01000: //4  (left function)
         kb_x= kb_x==0 ? 9 : kb_x-1;
         break;
@@ -451,7 +468,7 @@ void MakerCall(void){
         kb_x= kb_x>8 ? 0 : kb_x+1;
         break;
       default:
-        delay(150);
+        delay(150);        
         break;
     }
     if(kb_x!=kbo_x || kb_y!=kbo_y || enter_key_flag){
@@ -487,6 +504,7 @@ void MakerCall(void){
 
     if(digitalRead(0)==0 && strlen(writebuff)){ //pressed send and not empty buffer
       //send message
+      digitalWrite(IO_led_disable,LOW);
       snprintf(sendbuff,250,"%s%s",MAGICPREFIX,writebuff);
       broadcast(sendbuff);
       
@@ -503,12 +521,15 @@ void MakerCall(void){
       } while (display.nextPage());
       writebuff[0]=0; //clear
       delay(100); //crappy debounce
+      digitalWrite(IO_led_disable,HIGH);
     }
 
     //old marking line removed, update old with recent.
     kbo_x = kb_x;
     kbo_y = kb_y;
     enter_key_flag = false;
+
+
   }
 }
 

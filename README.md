@@ -6,8 +6,11 @@ This firmware gives Maker Badge these functions:
   * uses [Home Assistant REST API](https://developers.home-assistant.io/docs/api/rest/) http get.
   * deep sleep is used in the time between updates
 * MakerCall
-  * Communication broadcast tool that can send message to nearby MakerBadges that have MakerCall turned on
+  * Communication broadcast tool that can send message to nearby MakerBadges that have MakerCall turned on.
+  * Due to active RF recieving, power consumption in this mode is 76mA, so it is better if you could use bigger capacity battery (for example from old phone, like I did)
+<!---
   * See how it works: [Youtube video TBD](TBD)
+-->
 
 <img src="https://user-images.githubusercontent.com/25552139/212756508-df7927dd-351f-4965-90e9-c199fa787e72.jpg" alt="MB_HA" title="MakerBadge Home assistant" width="400"/>
 
