@@ -13,6 +13,9 @@ Before compiling, create config.h (copy and edit config_template.h).
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
 #include "driver/touch_pad.h"
+//ESPNOW
+#include <WiFi.h>
+#include <esp_now.h>
 
 // array for addressable LEDs control
 CRGB leds[4];
@@ -38,6 +41,16 @@ struct DispData httpParseReply(String payload);
 void DisplayMenu(void);
 void DisplayHomeAssistant(void);
 void low_battery_shutdown(void);
+void MakerCall(void); 
+//espnow
+void formatMacAddress(const uint8_t *macAddr, char *buffer, int maxLength);
+void receiveCallback(const uint8_t *macAddr, const uint8_t *data, int dataLen);
+void sentCallback(const uint8_t *macAddr, esp_now_send_status_t status);
+void broadcast(const String &message);
+char espnow_rcv_buffer[ESP_NOW_MAX_DATA_LEN + 1];
+int msgLen = 0; //0 is no message, others, message pending
+char peerMac[18];
+#define MAGICPREFIX "*/(MB"
 
 //Structure for getting data from Home Assistant
 struct DispData{
@@ -49,7 +62,7 @@ struct DispData{
 };
 
 //States of menu
-enum mbStates{Menu, HomeAssistant, Badge, FWupdate};
+enum mbStates{Menu, HomeAssistant, Badge, FWupdate, EspNow_sms};
 
 
 uint8_t TouchPins = 0x00;
@@ -93,7 +106,8 @@ void setup() {
   display.setRotation(3);
   display.setTextColor(GxEPD_BLACK);
 
-
+  //BOOT button
+  pinMode(0,INPUT_PULLUP);
 
   touch_pad_init(); //deinit is needed when going to sleep. Without deinit - extra 100uA. done in enter sleep function
   //touch wakeup, uncomment if you want to wake up on touch pin.
@@ -115,6 +129,9 @@ void setup() {
         case FWupdate:
           FWloadMode(); //forever powered on, shuts down on low battery
           break;
+        case EspNow_sms:
+          MakerCall(); //forever powered on, shuts down on low battery
+          break;
       }
       break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD:
@@ -122,7 +139,11 @@ void setup() {
       //define custom action for touch wake up case, and add break;
     default:
       //normal power-up after reset
-      DisplayMenu(); //menu to select a mode. Blocking.
+#ifdef MakerCall_only
+      MakerCall(); //never leaves this function
+#else
+      DisplayMenu(); //menu to select a mode. Leaves function upon selecting the mode or shutdown on timeout.
+#endif
       enter_sleep(1); //sleeps for 1s and gets back to switch timer wakeup cause.
   }
 } //end setup
@@ -146,7 +167,7 @@ void DisplayMenu(void){
     display.setCursor(0, 12);
     display.print("   Maker Badge Menu");
     display.setCursor(0, 39);
-    display.printf("   1. Home Assistant\n\n   2. Badge\n\n   3. FW update");
+    display.printf("   1. Home Assistant\n   2. Badge\n   3. FW update\n   4. MakerCall");
     display.fillRect(0,20,250,2,GxEPD_BLACK);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
@@ -166,8 +187,9 @@ void DisplayMenu(void){
       case 0b00100: //3
         CurrentMode = FWupdate;
         return;
-      //case 0b01000: //4
-      //  return;
+      case 0b01000: //4
+        CurrentMode = EspNow_sms;
+        return;
       //case 0b10000: //5
         //return;
       default:
@@ -233,11 +255,10 @@ void DisplayBadge(void){
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(0, 30);
     display.print(BadgeName);
-    //display.drawLine(226,7,226-6,7+6,GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
-    display.setCursor(70, 70);
+    display.setCursor(0, 70);
     display.print(BadgeLine2);
-    display.setCursor(45, 100);
+    display.setCursor(0, 100);
     display.print(BadgeLine3);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
@@ -284,6 +305,293 @@ void FWloadMode(void){
     analogReadBatt(); //for low voltage shutdown
   }
 }
+
+void MakerCall(void){
+  //y first, then x coordinate
+  const char keyboard[4][10] = { 
+        {'1','2','3','4','5','6','7','8','9','0'}, 
+        {'Q','W','E','R','T','Y','U','I','O','P'}, 
+        {'A','S','D','F','G','H','J','K','L','<'},
+        {'.','Z','X','C','V',' ','B','N','M','?'}
+        };
+  uint8_t keyboard_xy[2] = {0,2}; //x,y char A
+  uint8_t keyboard_xy_old[2] = {0,0};//x,y 
+  #define kb_x keyboard_xy[0]
+  #define kb_y keyboard_xy[1]
+  #define kbo_x keyboard_xy_old[0]
+  #define kbo_y keyboard_xy_old[1]
+
+  Serial.println("MakerCall-enter");
+  WiFi.mode(WIFI_STA);
+  // Output my MAC address - useful for later
+  Serial.print("My MAC Address is: ");
+  Serial.println(WiFi.macAddress());
+  String MyMAC;
+  MyMAC = WiFi.macAddress();
+  // shut down wifi
+  WiFi.disconnect();
+
+  if (esp_now_init() == ESP_OK)
+  {
+    Serial.println("ESPNow Init Success");
+    esp_now_register_recv_cb(receiveCallback);
+    esp_now_register_send_cb(sentCallback);
+  }
+  else
+  {
+    Serial.println("ESPNow Init Failed");
+  }
+  char sendbuff[251];
+  char writebuff[251] = {0};
+  uint8_t writebuff_len = 0;
+  bool enter_key_flag = false;
+  //snprintf(sendbuff,250,"%s%s",MAGICPREFIX,"Hello World 2 lorem ipsum");
+  //broadcast(sendbuff);
+
+  BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
+  digitalWrite(IO_led_disable,LOW);
+  leds[0] = CRGB(50,0,50); //Violet
+  FastLED.show();
+  display.setFont(&FreeMonoBold18pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  display.setTextWrap(true);
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
+    display.setFont(&FreeMonoBold9pt7b);
+    display.setCursor(0, 13);
+    display.print(BadgeName+MyMAC.substring(8));
+    display.fillRect(0,20,DISP_X,3,GxEPD_BLACK);
+    display.setFont(NULL);
+    display.setCursor(3, 64);
+    display.print("1 2 3 4 5 6 7 8 9 0");
+    display.setCursor(3, 64+11);
+    display.print("Q W E R T Y U I O P");
+    display.setCursor(3, 64+11*2);
+    display.print("A S D F G H J K L <");
+    display.setCursor(3, 64+11*3);
+    display.print(". Z X C V _ B N M ?");
+    display.setCursor(130, 64);
+    display.print("     MAKERCALL");
+    display.setCursor(130, 64+11);
+    display.print("DN | UP | OK | < | >");
+    display.setCursor(130, 64+11*2);
+    display.print(" BOOT btn sends to");
+    display.setCursor(130, 64+11*3);
+    display.print(" all MakerBadges!");
+  } while (display.nextPage());
+  uint8_t ledrotate = 0;
+  while(1){
+    leds[ledrotate++] = CRGB(0,0,0);
+    if (ledrotate == 4) ledrotate = 0;
+    leds[ledrotate] = CRGB(10,0,10);
+    FastLED.show();
+    analogReadBatt(); //for low voltage shutdown
+    //if new data received
+    if(msgLen>0 && 
+      espnow_rcv_buffer[0]==MAGICPREFIX[0] && 
+      espnow_rcv_buffer[1]==MAGICPREFIX[1] && 
+      espnow_rcv_buffer[2]==MAGICPREFIX[2] && 
+      espnow_rcv_buffer[3]==MAGICPREFIX[3] && 
+      espnow_rcv_buffer[4]==MAGICPREFIX[4])
+    {
+      Serial.println("Received data - update screen");
+      display.setPartialWindow(0, 27, DISP_X, 30);
+      do {
+        display.fillScreen(GxEPD_WHITE);
+      } while (display.nextPage());
+      do {
+        display.setFont(&FreeMonoBold9pt7b);
+        display.setCursor(0, 39);
+        display.print(&peerMac[9]);//only last 3 bytes
+        display.print(">");
+        display.print(&espnow_rcv_buffer[5]); //without magic prefix, write last received message
+      } while (display.nextPage());
+      msgLen = 0;
+      for(uint8_t lalarm=0;lalarm<4;lalarm++){
+        fill_solid(leds,4,CRGB(255,0,00));
+        FastLED.show();
+        delay(200);
+        FastLED.clear(true);
+        delay(200);
+      }
+      display.setFont(NULL); //prepare font for next time.
+      display.setTextWrap(false);
+    }
+    //keyboard and writing message
+    switch(readTouchPins()){
+      case 0b00001: //key 1 (left) (down function)
+        kb_y= kb_y>2 ? 0 : kb_y+1;
+        break;
+      case 0b00010: //2 (up function)
+        kb_y= kb_y==0 ? 3 : kb_y-1;
+        break;
+      case 0b00100: //3  (select function - enter key into write buffer)
+        writebuff_len = strlen(writebuff);
+        if (keyboard[kb_y][kb_x] == '<'){ //backspace
+          writebuff[writebuff_len-1] = 0;
+        } else {
+          writebuff[writebuff_len++] = keyboard[kb_y][kb_x];
+          writebuff[writebuff_len] = 0;
+        }
+        enter_key_flag = true;
+        fill_solid(leds,4,CRGB(0,64,0));
+        FastLED.show();
+        delay(150);
+        FastLED.clear(true);
+        break;
+      case 0b01000: //4  (left function)
+        kb_x= kb_x==0 ? 9 : kb_x-1;
+        break;
+      case 0b10000: //5  (right function)
+        kb_x= kb_x>8 ? 0 : kb_x+1;
+        break;
+      default:
+        delay(150);
+        break;
+    }
+    if(kb_x!=kbo_x || kb_y!=kbo_y || enter_key_flag){
+    Serial.printf("Keyboard x:%d y:%d char:%c | old  x:%d y:%d char:%c\n",
+      kb_x,kb_y,keyboard[kb_y][kb_x],
+      kbo_x,kbo_y,keyboard[kbo_y][kbo_x]);
+    }
+    
+    if(kb_x!=kbo_x){ //x change -> remove old hoirzontal
+      display.setPartialWindow(12*kbo_x, 64, 2, 40);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+      } while (display.nextPage());
+    }
+
+    if(kb_y!=kbo_y || kb_x!=kbo_x){ //y or x change
+      display.setPartialWindow(12*kb_x, 64, 2, 40);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+        display.fillRect(12*kb_x,64+10*kb_y,2, 10,GxEPD_BLACK);
+        } while (display.nextPage());
+    }
+    if(enter_key_flag){
+      Serial.printf("key select update, buffer %s\n",writebuff);
+      
+      display.setPartialWindow(0, 104, DISP_X, 16);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+        display.setCursor(0, 104+8);
+        display.print(writebuff);
+      } while (display.nextPage());
+    }
+
+    if(digitalRead(0)==0 && strlen(writebuff)){ //pressed send and not empty buffer
+      //send message
+      snprintf(sendbuff,250,"%s%s",MAGICPREFIX,writebuff);
+      broadcast(sendbuff);
+      
+      fill_solid(leds,4,CRGB(32,32,0)); //yellow, indicate sending
+        FastLED.show();
+        delay(150);
+        FastLED.clear(true);
+      display.setPartialWindow(0, 104, DISP_X, 16);//y and h multiples of 8
+      do {
+        display.fillScreen(GxEPD_WHITE); //remove any horizontal line selector
+        display.setCursor(0, 104+8);
+        display.print("Sent> ");
+        display.print(writebuff);
+      } while (display.nextPage());
+      writebuff[0]=0; //clear
+      delay(100); //crappy debounce
+    }
+
+    //old marking line removed, update old with recent.
+    kbo_x = kb_x;
+    kbo_y = kb_y;
+    enter_key_flag = false;
+  }
+}
+
+void formatMacAddress(const uint8_t *macAddr, char *buffer, int maxLength)
+{
+  snprintf(buffer, maxLength, "%02x:%02x:%02x:%02x:%02x:%02x", macAddr[0], macAddr[1], macAddr[2], macAddr[3], macAddr[4], macAddr[5]);
+}
+
+void receiveCallback(const uint8_t *macAddr, const uint8_t *data, int dataLen)
+{
+  // format the mac address
+  //char peerMac[18]; //chenged to global
+  formatMacAddress(macAddr, peerMac, 18);
+  // only allow a maximum of 250 characters in the message + a null terminating byte
+  msgLen = min(ESP_NOW_MAX_DATA_LEN, dataLen);
+  strncpy(espnow_rcv_buffer, (const char *)data, msgLen);
+  // make sure we are null terminated
+  espnow_rcv_buffer[msgLen] = 0;
+  // debug log the message to the serial port
+  Serial.printf("Received message from: %s - %s\n", peerMac, espnow_rcv_buffer);
+}
+
+// callback when data is sent
+void sentCallback(const uint8_t *macAddr, esp_now_send_status_t status)
+{
+  char macStr[18];
+  formatMacAddress(macAddr, macStr, 18);
+  Serial.print("Last Packet Sent to: ");
+  Serial.println(macStr);
+  Serial.print("Last Packet Send Status: ");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+
+void broadcast(const String &message)
+{
+  // this will broadcast a message to everyone in range
+  uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(&peerInfo.peer_addr, broadcastAddress, 6);
+  if (!esp_now_is_peer_exist(broadcastAddress))
+  {
+    esp_now_add_peer(&peerInfo);
+  }
+  esp_err_t result = esp_now_send(broadcastAddress, (const uint8_t *)message.c_str(), message.length());
+  // and this will send a message to a specific device
+  /*uint8_t peerAddress[] = {0x3C, 0x71, 0xBF, 0x47, 0xA5, 0xC0};
+  esp_now_peer_info_t peerInfo = {};
+  memcpy(&peerInfo.peer_addr, peerAddress, 6);
+  if (!esp_now_is_peer_exist(peerAddress))
+  {
+    esp_now_add_peer(&peerInfo);
+  }
+  esp_err_t result = esp_now_send(peerAddress, (const uint8_t *)message.c_str(), message.length());*/
+  if (result == ESP_OK)
+  {
+    Serial.println("Broadcast message success");
+  }
+  else if (result == ESP_ERR_ESPNOW_NOT_INIT)
+  {
+    Serial.println("ESPNOW not Init.");
+  }
+  else if (result == ESP_ERR_ESPNOW_ARG)
+  {
+    Serial.println("Invalid Argument");
+  }
+  else if (result == ESP_ERR_ESPNOW_INTERNAL)
+  {
+    Serial.println("Internal Error");
+  }
+  else if (result == ESP_ERR_ESPNOW_NO_MEM)
+  {
+    Serial.println("ESP_ERR_ESPNOW_NO_MEM");
+  }
+  else if (result == ESP_ERR_ESPNOW_NOT_FOUND)
+  {
+    Serial.println("Peer not found.");
+  }
+  else
+  {
+    Serial.println("Unknown error");
+  }
+}
+
+
 //---------------------------------
 float analogReadBatt(){
 #ifdef MakerBadgeVersionD
@@ -295,7 +603,7 @@ float analogReadBatt(){
   digitalWrite(IO_BAT_meas_disable,HIGH);
 #endif
   float battv = (BATT_V_CAL_SCALE*2.0*(2.50*batt_adc/4096));
-  Serial.printf("Battv: %fV, Bat w/ calibration %fV, raw ADC %d\n",battv/BATT_V_CAL_SCALE,battv,batt_adc);
+  //Serial.printf("Battv: %fV, Bat w/ calibration %fV, raw ADC %d\n",battv/BATT_V_CAL_SCALE,battv,batt_adc);
   if(battv<3.45){ //3.3V is sustem power, 150mV is LDO dropoff (estimates only)
     Serial.printf("Bat %fV, shutting down...\n",battv,batt_adc);
     //ESP_LOGE("MakerBadge","Batt %f V",battv); //log to HW UART
@@ -319,7 +627,7 @@ void low_battery_shutdown(void){
       display.setFont(&FreeMonoBold9pt7b);
       display.setCursor(70, 70);
       display.print(BadgeLine2);
-      display.setCursor(45, 100);
+      display.setCursor(0, 100);
       display.print(BadgeLine3);
       display.setCursor(55, DISP_Y-5);
       display.print("Discharged!");

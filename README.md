@@ -5,16 +5,33 @@ This firmware gives Maker Badge these functions:
 * Home mode - periodically updated dashboard with data from home assitant server. 
   * uses [Home Assistant REST API](https://developers.home-assistant.io/docs/api/rest/) http get.
   * deep sleep is used in the time between updates
+* MakerCall
+  * Communication broadcast tool that can send message to nearby MakerBadges that have MakerCall turned on
+  * See how it works: [Youtube video TBD](TBD)
 
-![20230115_225630](https://user-images.githubusercontent.com/25552139/212756508-df7927dd-351f-4965-90e9-c199fa787e72.jpg)
+<img src="https://user-images.githubusercontent.com/25552139/212756508-df7927dd-351f-4965-90e9-c199fa787e72.jpg" alt="MB_HA" title="MakerBadge Home assistant" width="400"/>
 
 ## Develpoment tools
 * Framework: Arduino
 * IDE: Platformio
 
-## How to convert Makerbadge from CPY to Arduino?
+# How to flash
+To use all the features, the config file must be edited and program compiled and flashed using PlatformIO or Arduino IDE. (guide B)
 
-This guide is made for programming makerbadge in Platformio IDE in VScode.
+If you want to use only MakerCall communicator, follow the shorter guide (guide A).
+
+## A. Only MakerCall flash guide
+Direct flash of the firmware without an option to change code.
+
+1. Download flash tool from [releases/assets](https://github.com/Yourigh/maker_badge_fw/releases)
+2. Unpack all
+3. Connect MakerBadge to PC and put to download mode (hold BOOT and click RESET)
+4. Run update_badge_verC.bat or update_badge_verD.bat depending on your badge version.
+  *Firmware should be flashed. If the device is not found check COM port number and edit it in update script*
+5. Press Reset button to run new firmware.
+
+## B. Full firmware flash guide
+This guide is made for programming makerbadge in Platformio IDE in VScode. MakerBadge come originally flashed with CircutPython. 
 
 0. Start VScode with platformio and clone this repo.
 1. Set or verify the USB upload is enabled in platformio.ini:
@@ -48,6 +65,11 @@ Pro tip:
 If experiencing issues, you can try to do a full-erase of ESP32 memory.
 * Open command line in VScode and run `pio run --target erase`. Result should say `Chip erase completed successfully in...`. Error on the end is ok.
 
+## Do you want to go back to CPY?
+This firmware use Arduino and compiled code. The MakerBadge is originally shipped with CircutPython. To go back to CPY, follow this [guide](https://learn.adafruit.com/adafruit-metro-esp32-s2/circuitpython)
+
+The original python code is saved in [this repository](https://github.com/makerfaireczech/maker_badge/tree/main).
+
 # Hardware
 Hardware for a makerbadge made by [@dronecz](https://github.com/dronecz/maker_badge).
 
@@ -59,4 +81,3 @@ Hardware for a makerbadge made by [@dronecz](https://github.com/dronecz/maker_ba
 
 ## Compatibility
 Project is compatible, or can be easily adjusted for any eInk that is supported by GxEPD2 library and has ESP32-S2 (or other ESP32 IC). 
-
