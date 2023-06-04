@@ -400,6 +400,7 @@ void MakerCall(void){
     {
       Serial.println("Received data - update screen");
       display.setPartialWindow(0, 27, DISP_X, 30);
+      display.setTextWrap(true);
       do {
         display.fillScreen(GxEPD_WHITE);
       } while (display.nextPage());

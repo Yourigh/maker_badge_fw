@@ -26,7 +26,7 @@ Direct flash of the firmware without an option to change code.
 1. Download flash tool from [releases/assets](https://github.com/Yourigh/maker_badge_fw/releases)
 2. Unpack all
 3. Connect MakerBadge to PC and put to download mode (hold BOOT and click RESET)
-4. Run update_badge_verC.bat or update_badge_verD.bat depending on your badge version.
+4. Run **update_badge_verC.bat** or **update_badge_verD.bat** depending on your badge version.
   *Firmware should be flashed. If the device is not found check COM port number and edit it in update script*
 5. Press Reset button to run new firmware.
 
@@ -81,3 +81,7 @@ Hardware for a makerbadge made by [@dronecz](https://github.com/dronecz/maker_ba
 
 ## Compatibility
 Project is compatible, or can be easily adjusted for any eInk that is supported by GxEPD2 library and has ESP32-S2 (or other ESP32 IC). 
+
+## Sources
+* ESPNOW part inspired by
+https://github.com/atomic14/ESPNowSimpleSample
