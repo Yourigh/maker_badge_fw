@@ -58,3 +58,6 @@ template:
 #else   
     #define BATT_V_CAL_SCALE 1.00
 #endif
+
+//MakerCall config
+//#define MakerCall_only //comment for full functionality

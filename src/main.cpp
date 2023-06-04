@@ -17,7 +17,6 @@ Before compiling, create config.h (copy and edit config_template.h).
 #include <WiFi.h>
 #include <esp_now.h>
 
-
 // array for addressable LEDs control
 CRGB leds[4];
 // Instantiate the GxEPD2_BW class for our display type
@@ -140,7 +139,11 @@ void setup() {
       //define custom action for touch wake up case, and add break;
     default:
       //normal power-up after reset
-      DisplayMenu(); //menu to select a mode. Blocking.
+#ifdef MakerCall_only
+      MakerCall(); //never leaves this function
+#else
+      DisplayMenu(); //menu to select a mode. Leaves function upon selecting the mode or shutdown on timeout.
+#endif
       enter_sleep(1); //sleeps for 1s and gets back to switch timer wakeup cause.
   }
 } //end setup
