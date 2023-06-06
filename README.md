@@ -13,7 +13,7 @@ This firmware gives Maker Badge these functions:
     [![YoutubeVideo](https://github.com/Yourigh/maker_badge_fw/assets/25552139/11c86796-9161-485c-8589-4eeb8f577861)](https://youtu.be/rwIuPDdZZNg)
 
 ![image](https://github.com/Yourigh/maker_badge_fw/assets/25552139/ec7d42d9-fdac-4ad0-848a-a3c991af247c)
-<img src="https://user-images.githubusercontent.com/25552139/212756508-df7927dd-351f-4965-90e9-c199fa787e72.jpg" alt="MB_HA" title="MakerBadge Home assistant" width="400"/>
+<img src="https://user-images.githubusercontent.com/25552139/212756508-df7927dd-351f-4965-90e9-c199fa787e72.jpg" alt="MB_HA" title="MakerBadge Home assistant" width="340"/>
 
 ## Develpoment tools
 * Framework: Arduino
