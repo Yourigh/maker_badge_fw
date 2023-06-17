@@ -216,7 +216,8 @@ void DisplayHomeAssistant(void){
     enter_sleep(HA_UPDATE_PERIOD_SEC); //on fail
   }
   //No OTA is set up to save energy, FWupdate mode is for OTA
-  display.setFont(&FreeMonoBold9pt7b);
+  //display.setFont(&FreeMonoBold9pt7b);
+  display.setFont(&FreeMonoBold12pt7b);
   
   //Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
   //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test of HA - should get API RUNNING
@@ -225,12 +226,8 @@ void DisplayHomeAssistant(void){
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
-    display.setCursor(0, 12);
-    display.print("    Home Assistant");
-    display.setFont(&FreeMonoBold12pt7b);
-    display.fillRect(0,18,250,1,GxEPD_BLACK); //line below Home Assistant heading
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
-    display.setCursor(0, 39);
+    display.setCursor(0, 15);
     display.print(ActualDispData.RawState);
 #if SHOW_LAST_UPDATE
     display.setFont(NULL); // default 5x7 system font?
