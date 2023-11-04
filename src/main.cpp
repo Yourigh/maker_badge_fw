@@ -12,6 +12,10 @@ Before compiling, create config.h (copy and edit config_template.h).
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
+//#include <Fonts/FreeSans_18pt.h>
+#include <Fonts/FreeSansBold_12pt.h>
+#include <Fonts/RobotoCondensed-Regular_18pt.h>
+#include "gfxlatin2.h" //for Czech characters support.
 #include "driver/touch_pad.h"
 //ESPNOW
 #include <WiFi.h>
@@ -38,6 +42,7 @@ void CallbackTouch3(void){} //empty function.
 void FWloadMode(void);
 String httpGETRequest(const char* serverName);
 struct DispData httpParseReply(String payload);
+String getLine(const String& data, int lineIndex);
 void DisplayMenu(void);
 void DisplayHomeAssistant(void);
 void low_battery_shutdown(void);
@@ -116,6 +121,11 @@ void setup() {
 
   //Wake up and resume to last mode. If woken up from reset(not timer) - show menu.
   //Serial.printf("CurrentMode is:%d",CurrentMode);
+  
+  //debug HA
+  //while(1)
+  //  DisplayHomeAssistant(); 
+
   switch (esp_sleep_get_wakeup_cause()){
     case ESP_SLEEP_WAKEUP_TIMER:
       //restore last used mode.
@@ -216,19 +226,24 @@ void DisplayHomeAssistant(void){
     enter_sleep(HA_UPDATE_PERIOD_SEC); //on fail
   }
   //No OTA is set up to save energy, FWupdate mode is for OTA
-  //display.setFont(&FreeMonoBold9pt7b);
-  display.setFont(&FreeMonoBold12pt7b);
+  display.setFont(&RobotoCondensed_Regular18pt8b);  
   
   //Serial.printf("Batt: %.3f, Bar:%d\n",analogReadBatt(),BattBar);
   //Serial.println(httpGETRequest("http://192.168.1.14:8123/api/")); //test of HA - should get API RUNNING
   ActualDispData = httpParseReply(httpGETRequest(HAreqURL));
+  ActualDispData.RawState = utf8tocp(ActualDispData.RawState); //for czech support
   display.setFullWindow();
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
-    display.setCursor(0, 15);
-    display.print(ActualDispData.RawState);
+    display.setCursor(0, 23);
+    display.print(getLine(ActualDispData.RawState,0));
+    display.setCursor(0, 23+30);
+    display.print(getLine(ActualDispData.RawState,1));
+    display.setFont(&FreeSansBold12pt8b);
+    display.setCursor(0, 23+30+28);
+    display.print(getLine(ActualDispData.RawState,2));
 #if SHOW_LAST_UPDATE
     display.setFont(NULL); // default 5x7 system font?
     display.setCursor(23, DISP_Y-10);
@@ -237,6 +252,8 @@ void DisplayHomeAssistant(void){
   } while (display.nextPage());
 
   enter_sleep(HA_UPDATE_PERIOD_SEC);
+  //debug HA
+  //delay(5000);
 }
 
 void DisplayBadge(void){
@@ -248,15 +265,19 @@ void DisplayBadge(void){
   display.firstPage();
   display.setTextWrap(false);
   BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
+  char text[24];
   do {
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(0, 30);
-    display.print(BadgeName);
+    strcpy( text, BadgeName );
+    display.print(text);
     display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(0, 70);
-    display.print(BadgeLine2);
+    strcpy( text, BadgeLine2 );
+    display.print(text);
     display.setCursor(0, 100);
-    display.print(BadgeLine3);
+    strcpy( text, BadgeLine3 );
+    display.print(text);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
   digitalWrite(IO_led_disable,HIGH);
@@ -767,9 +788,6 @@ struct DispData httpParseReply(String payload){
   //Serial.printf("indexes %d - %d\n",SearchIndex,SearchIndexEnd);
   ActualDispData.valid = true;
   ActualDispData.RawState = payload.substring(SearchIndex+9,SearchIndexEnd);
-  ActualDispData.RawState.replace("\\n","\n"); //home assistant cannot send new line. sends \n in text instead. Replace by real new line here.
-  //Serial.print("ISOLATED STATE:");
-  //Serial.println(StateStr);
 
 #if SHOW_LAST_UPDATE
   SearchIndex = payload.indexOf("\"last_changed\":\"");
@@ -781,3 +799,39 @@ struct DispData httpParseReply(String payload){
   return ActualDispData;
 }
 
+/**
+ * @brief Retrieves a specified line from a string.
+ * 
+ * This function searches for newline characters (\n) to identify lines within a string.
+ * It returns the entire line at the zero-based index specified by lineIndex. If the line
+ * index exceeds the number of lines in the string, an empty string is returned. If lineIndex
+ * is 0, the first line is returned. Lines are counted based on the occurrence of newline
+ * characters, with the first line being from the start of the string to the first newline.
+ *
+ * @param data The string containing lines separated by newline characters.
+ * @param lineIndex The zero-based index of the line to retrieve. (0 for the first line)
+ * @return String The line at the specified index or an empty string if the index is out of range.
+ */
+String getLine(const String& data, int lineIndex) {
+    int line = 0; // Start at the first line
+    int start = 0; // Start index of the line
+    int end; // End index of the line (position of newline character)
+
+    for (int i = 0; i <= lineIndex; ++i) {
+        end = data.indexOf("\\n", start); // Find the newline character from start index
+        if (end == -1) {
+            if (i == lineIndex) { // If this is the last line, return the rest of the string
+                return data.substring(start);
+            } else { // If the requested line index is higher than the total number of lines, return empty
+                return "";
+            }
+        } else {
+            if (i == lineIndex) { // If current line is the requested one, return the line
+                return data.substring(start, end);
+            }
+            // Not the requested line, move to the next line
+            start = end + 2;
+        }
+    }
+    return ""; // If for some reason the line index is out of range, return empty
+}
