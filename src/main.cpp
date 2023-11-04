@@ -122,9 +122,10 @@ void setup() {
   //Wake up and resume to last mode. If woken up from reset(not timer) - show menu.
   //Serial.printf("CurrentMode is:%d",CurrentMode);
   
-  //debug HA
-  //while(1)
-  //  DisplayHomeAssistant(); 
+#if DEBUG_HA
+  while(1)
+    DisplayHomeAssistant(); 
+#endif
 
   switch (esp_sleep_get_wakeup_cause()){
     case ESP_SLEEP_WAKEUP_TIMER:
@@ -251,9 +252,32 @@ void DisplayHomeAssistant(void){
 #endif
   } while (display.nextPage());
 
-  enter_sleep(HA_UPDATE_PERIOD_SEC);
-  //debug HA
-  //delay(5000);
+uint16_t HA_SLEEP_SEC = 10;
+uint8_t hour = ActualDispData.LastChangedStr.substring(11, 13).toInt();
+
+// Check if the current hour is within the night time range
+if (HA_UPDATE_NIGHT_UTC_HR_START < HA_UPDATE_NIGHT_UTC_HR_STOP) {
+    // For ranges that don't cross midnight (like 1AM to 5AM)
+    if (hour >= HA_UPDATE_NIGHT_UTC_HR_START && hour < HA_UPDATE_NIGHT_UTC_HR_STOP) {
+        HA_SLEEP_SEC= HA_UPDATE_PERIOD_SEC_NIGHT;
+    } else {
+        HA_SLEEP_SEC= HA_UPDATE_PERIOD_SEC_DAY;
+    }
+} else {
+    // For ranges that cross midnight (like 22PM to 8AM)
+    if (hour >= HA_UPDATE_NIGHT_UTC_HR_START || hour < HA_UPDATE_NIGHT_UTC_HR_STOP) {
+        HA_SLEEP_SEC= HA_UPDATE_PERIOD_SEC_NIGHT;
+    } else {
+        HA_SLEEP_SEC= HA_UPDATE_PERIOD_SEC_DAY;
+    }
+}
+//Serial.printf("Going to sleep for %d s\n",HA_SLEEP_SEC);
+
+#if DEBUG_HA
+  delay(3000);
+#else
+  enter_sleep(HA_SLEEP_SEC);
+#endif
 }
 
 void DisplayBadge(void){
@@ -789,13 +813,13 @@ struct DispData httpParseReply(String payload){
   ActualDispData.valid = true;
   ActualDispData.RawState = payload.substring(SearchIndex+9,SearchIndexEnd);
 
-#if SHOW_LAST_UPDATE
+  //last update used for distingushing night and day
   SearchIndex = payload.indexOf("\"last_changed\":\"");
   if (SearchIndex != -1){
     SearchIndexEnd = payload.indexOf("\"",SearchIndex+20);
     ActualDispData.LastChangedStr = payload.substring(SearchIndex+16,SearchIndexEnd);
   }
-#endif
+
   return ActualDispData;
 }
 
