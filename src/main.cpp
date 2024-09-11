@@ -53,6 +53,7 @@ void DisplayBadge(void);
 void CallbackTouch3(void){} //empty function.
 void FWloadMode(void);
 String httpGETRequest(const char* serverName);
+uint8_t httpPOSTstateToHA(const char* entity, int64_t value);
 struct DispData httpParseReply(String payload);
 String getLine(const String& data, int lineIndex);
 void DisplayMenu(void);
@@ -138,6 +139,11 @@ void setup() {
 #if DEBUG_HA
   while(1)
     DisplayHomeAssistant(); 
+#endif
+
+#if DEBUG_SENSOR
+  while(1)
+    SensorMode(); 
 #endif
 
   switch (esp_sleep_get_wakeup_cause()){
@@ -593,6 +599,7 @@ void MakerCall(void){
 }
 
 void SensorMode(void){
+  digitalWrite(IO_led_disable,LOW);
   unsigned long startTime = millis();
   uint8_t timeout = 0;
   int16_t OzValue = -1;
@@ -628,16 +635,12 @@ void SensorMode(void){
     display.fillScreen(GxEPD_WHITE);
     display.setCursor(0, 30);
     display.print(text);
-    //display.setFont(&FreeMonoBold9pt7b);
     display.setCursor(0, 100);
     strcpy( text, "Ozone PPB" );
     display.print(text);
-    //display.setCursor(0, 100);
-    //strcpy( text, "Runtime[s]: " );
-    //display.print(text);
-    //display.setCursor(120, 100);
-    //sprintf(text, "%d", millis()/1000);
-    //display.print(text);
+    display.setFont(NULL); // default 5x7 system font?
+    display.setCursor(3, DISP_Y-10);
+    display.print("Press key 1 to enable HA data sending");
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
 
@@ -647,24 +650,56 @@ void SensorMode(void){
     enter_sleep(0);
   }
 
+  uint32_t sensorUpdatePeriodMs = 500; //also for HA sending, min 150ms
+  uint32_t displayUpdatePeriodMs = 2000;
+  uint32_t sensorUpdateStart = millis();
+  uint32_t displayUpdateStart = millis();
+  uint8_t sendDataToHA = 0;
+  #define KEY_TOUCH_1 0b00001
+  char entity[50] = "input_number.ozone_ppb";
   while(1){
-    OzValue = Ozone.readOzoneData(COLLECT_NUMBER);
-    Serial.println("Screen partial update");
-      display.setPartialWindow(0, 0, DISP_X, 30);
-      do {
-        display.fillScreen(GxEPD_WHITE);
-      } while (display.nextPage());
-      do {
-        display.setFont(&FreeMonoBold18pt7b);
-        display.setCursor(0, 30);
-        sprintf(text, "%d", OzValue);
-        display.print(text);
-        display.setFont(&FreeMonoBold9pt7b);
-        display.setCursor(175, 15);
-        sprintf(text, "%d", millis()/1000);
-        display.print(text);
-      } while (display.nextPage());
-    delay(2000);
+    if(millis() > sensorUpdateStart + sensorUpdatePeriodMs){
+      sensorUpdateStart = millis();
+      OzValue = Ozone.readOzoneData(COLLECT_NUMBER);
+      if (sendDataToHA){
+        httpPOSTstateToHA(entity,OzValue);
+      }
+    }
+
+    if(millis() > displayUpdateStart + displayUpdatePeriodMs){
+      Serial.println("Screen partial update");
+        display.setPartialWindow(0, 0, DISP_X, 30);
+        do {
+          display.fillScreen(GxEPD_WHITE);
+        } while (display.nextPage());
+        do {
+          display.setFont(&FreeMonoBold18pt7b);
+          display.setCursor(0, 30);
+          sprintf(text, "%d", OzValue);
+          display.print(text);
+          display.setFont(&FreeMonoBold9pt7b);
+          display.setCursor(175, 15);
+          sprintf(text, "%d", millis()/1000);
+          display.print(text);
+        } while (display.nextPage());
+    }
+
+    //enable WIFI by touch btn
+    if((readTouchPins()==KEY_TOUCH_1) && (!sendDataToHA)){
+      delay(50);
+      if(readTouchPins()==KEY_TOUCH_1){
+        //connect etc..
+        if(0==MakerBadgeSetupWiFi()){
+          //setupOTA();
+          leds[0] = CRGB(0,10,0);// CRGB::Green;
+          FastLED.show();
+          delay(500);
+          leds[0] = CRGB(0,0,0);
+          FastLED.show();
+          sendDataToHA = 1;
+        }
+      }
+    }
   }
 }
 
@@ -885,6 +920,37 @@ String httpGETRequest(const char* serverName) {
   http.end();
 
   return payload;
+}
+
+uint8_t httpPOSTstateToHA(const char* entity,int64_t value){
+  WiFiClient client;
+  HTTPClient http;
+  char url[256];
+  strcpy(url, HAbaseURL);
+  strcat(url, entity);
+  http.begin(client, url);
+  http.addHeader("Authorization",HAtoken); //authorization for home assistant
+  String payload = "{\"state\": \"" + String(value) + "\"}";
+  int httpResponseCode = http.POST(payload);
+  if (httpResponseCode == HTTP_CODE_OK) {
+    Serial.println("Data sent successfully");
+    leds[0] = CRGB(0,20,0);// CRGB::Green;
+    FastLED.show();
+    delay(100);
+    leds[0] = CRGB(0,0,0);
+    FastLED.show();
+  } else {
+    Serial.print("Error sending data. HTTP response code: ");
+    Serial.println(httpResponseCode);
+    leds[0] = CRGB(100,0,0);
+    FastLED.show();
+    delay(100);
+    leds[0] = CRGB(0,0,0);
+    FastLED.show();
+    return 1;
+  }
+  http.end();
+  return 0;
 }
 
 struct DispData httpParseReply(String payload){
