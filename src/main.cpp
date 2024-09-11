@@ -20,6 +20,18 @@ Before compiling, create config.h (copy and edit config_template.h).
 //ESPNOW
 #include <WiFi.h>
 #include <esp_now.h>
+//Ozone
+#include "DFRobot_OzoneSensor.h"
+
+#define COLLECT_NUMBER   20              // collect number, the collection range is 1-100
+#define Ozone_IICAddress OZONE_ADDRESS_3
+/*   iic slave Address, The default is ADDRESS_3
+       ADDRESS_0               0x70      // iic device address
+       ADDRESS_1               0x71
+       ADDRESS_2               0x72
+       ADDRESS_3               0x73
+*/
+DFRobot_OzoneSensor Ozone;
 
 // array for addressable LEDs control
 CRGB leds[4];
@@ -47,6 +59,7 @@ void DisplayMenu(void);
 void DisplayHomeAssistant(void);
 void low_battery_shutdown(void);
 void MakerCall(void); 
+void SensorMode(void);
 //espnow
 void formatMacAddress(const uint8_t *macAddr, char *buffer, int maxLength);
 void receiveCallback(const uint8_t *macAddr, const uint8_t *data, int dataLen);
@@ -67,7 +80,7 @@ struct DispData{
 };
 
 //States of menu
-enum mbStates{Menu, HomeAssistant, Badge, FWupdate, EspNow_sms};
+enum mbStates{Menu, HomeAssistant, Badge, FWupdate, EspNow_sms, Sensors};
 
 
 uint8_t TouchPins = 0x00;
@@ -143,6 +156,9 @@ void setup() {
         case EspNow_sms:
           MakerCall(); //forever powered on, shuts down on low battery
           break;
+        case Sensors:
+          SensorMode(); //forever powered on, shuts down on low battery
+          break;
       }
       break;
     case ESP_SLEEP_WAKEUP_TOUCHPAD:
@@ -178,7 +194,7 @@ void DisplayMenu(void){
     display.setCursor(0, 12);
     display.print("   Maker Badge Menu");
     display.setCursor(0, 39);
-    display.printf("   1. Home Assistant\n   2. Badge\n   3. FW update\n   4. MakerCall");
+    display.printf("   1. Home Assistant\n   2. Badge\n   3. FW update\n   4. MakerCall\n   5. Sensors");
     display.fillRect(0,20,250,2,GxEPD_BLACK);
     display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
   } while (display.nextPage());
@@ -201,8 +217,9 @@ void DisplayMenu(void){
       case 0b01000: //4
         CurrentMode = EspNow_sms;
         return;
-      //case 0b10000: //5
-        //return;
+      case 0b10000: //5
+        CurrentMode = Sensors;
+        return;
       default:
         CurrentMode = Menu;
         break;
@@ -572,6 +589,82 @@ void MakerCall(void){
     enter_key_flag = false;
 
 
+  }
+}
+
+void SensorMode(void){
+  unsigned long startTime = millis();
+  uint8_t timeout = 0;
+  int16_t OzValue = -1;
+
+  Wire.begin(8,9,100000); //SDA, SCL, 100kHz
+
+  while(!Ozone.begin(Ozone_IICAddress)) {
+    Serial.println("I2c device number error !");
+    delay(10);
+    if (millis() - startTime > 3000) {
+      Serial.println("Timeout occurred");
+      timeout=1;
+      break;
+    }
+  }  
+  Ozone.setModes(MEASURE_MODE_PASSIVE);
+
+  display.setFont(&FreeMonoBold18pt7b);
+  display.setFullWindow();
+  display.firstPage();
+  display.setTextWrap(false);
+  BattBar = ((analogReadBatt()-3.45)*333.3); //3.45V to 4.2V range convert to 0-250px.
+  char text[24];
+  if(timeout){
+    strcpy(text, "ERR");
+  } else {
+    if (OzValue == -1)
+      strcpy(text, "INIT");
+    else
+      sprintf(text, "%d", OzValue);
+  }
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setCursor(0, 30);
+    display.print(text);
+    //display.setFont(&FreeMonoBold9pt7b);
+    display.setCursor(0, 100);
+    strcpy( text, "Ozone PPB" );
+    display.print(text);
+    //display.setCursor(0, 100);
+    //strcpy( text, "Runtime[s]: " );
+    //display.print(text);
+    //display.setCursor(120, 100);
+    //sprintf(text, "%d", millis()/1000);
+    //display.print(text);
+    display.fillRect(0,DISP_Y-2,BattBar,2,GxEPD_BLACK);
+  } while (display.nextPage());
+
+  if (timeout) {
+    digitalWrite(IO_led_disable,HIGH);
+    display.powerOff();
+    enter_sleep(0);
+  }
+
+  while(1){
+    OzValue = Ozone.readOzoneData(COLLECT_NUMBER);
+    Serial.println("Screen partial update");
+      display.setPartialWindow(0, 0, DISP_X, 30);
+      do {
+        display.fillScreen(GxEPD_WHITE);
+      } while (display.nextPage());
+      do {
+        display.setFont(&FreeMonoBold18pt7b);
+        display.setCursor(0, 30);
+        sprintf(text, "%d", OzValue);
+        display.print(text);
+        display.setFont(&FreeMonoBold9pt7b);
+        display.setCursor(175, 15);
+        sprintf(text, "%d", millis()/1000);
+        display.print(text);
+      } while (display.nextPage());
+    delay(2000);
   }
 }
 
